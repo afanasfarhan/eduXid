@@ -231,6 +231,10 @@
                             <div class="bottom-decoration"></div>  
                             <div class="bottom-accent"></div>
                         </div>  
+                        <div class="mt-5 flex flex-col items-center gap-2">
+                            <h4 class="font-semibold text-gray-700 text-sm">Pratinjau Bagian Belakang Kartu</h4>
+                            <div id="student-card-back-preview" aria-label="Pratinjau ketentuan di belakang kartu pelajar"></div>
+                        </div>
                     </div>  
                 </div>  
             </div>  
@@ -381,11 +385,12 @@
             background: #d4af37;
             clip-path: polygon(30% 0, 100% 0, 100% 100%, 0% 100%);
         }
+        /* V21R174: sisi belakang kartu 90 x 60 mm; kop sama dengan sisi depan. */
         .student-card-back {
             position: relative;
             width: 90mm;
             height: 60mm;
-            background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+            background: #ffffff;
             border: 0.5mm solid #1e3a8a;
             overflow: hidden;
             font-family: Arial, Helvetica, sans-serif;
@@ -394,73 +399,73 @@
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
         }
-        .student-card-back .back-title {
-            text-align: center;
-            font-size: 2.8mm;
-            font-weight: 800;
-            color: #1e3a8a;
-            margin: 1mm 0 0.8mm;
-            letter-spacing: 0.4mm;
-            text-transform: uppercase;
+        .student-card-back .back-header {
+            height: 13mm;
+            padding: 0.4mm 1.8mm;
+            background: #ffffff;
+            box-sizing: border-box;
+            overflow: hidden;
         }
-        .student-card-back .back-body {
-            padding: 0 3mm;
-            font-size: 1.7mm;
-            line-height: 1.25;
+        .student-card-back .back-header .card-header {
+            width: 100%;
+            height: 100%;
+            padding: 0.3mm 1mm;
+            box-sizing: border-box;
+            box-shadow: none;
+        }
+        .student-card-back .back-header .card-header img {
+            max-height: 100%;
+            max-width: 100%;
+            object-fit: contain;
+        }
+        .student-card-back .back-header .kop-teks-fallback .school-name {
+            font-size: 3mm;
+            overflow-wrap: anywhere;
+        }
+        .student-card-back .back-header .kop-teks-fallback .school-address {
+            font-size: 1.75mm;
+        }
+        .student-card-back .back-divider {
+            height: 0.6mm;
+            background: linear-gradient(90deg, #1e3a8a, #d4af37, #1e3a8a);
+        }
+        .student-card-back .back-terms {
+            padding: 1.55mm 3.3mm 2.7mm;
+            box-sizing: border-box;
+        }
+        .student-card-back .back-terms-heading {
+            color: #1e3a8a;
+            font-size: 2.7mm;
+            line-height: 1.1;
+            font-weight: 800;
+            margin-bottom: 1.15mm;
+            letter-spacing: 0.18mm;
+        }
+        .student-card-back .back-terms-list {
+            list-style-type: decimal;
+            margin: 0;
+            padding-left: 4.35mm;
+            font-size: 1.95mm;
+            line-height: 1.27;
+            font-weight: 500;
             color: #1f2937;
         }
-        .student-card-back .back-school-name {
-            font-size: 2.1mm;
-            font-weight: 700;
-            color: #1e3a8a;
-            text-align: center;
-            text-transform: uppercase;
-            margin-bottom: 0.6mm;
+        .student-card-back .back-terms-list li {
+            padding-left: 0.35mm;
+            margin: 0 0 0.75mm;
+            overflow-wrap: break-word;
         }
-        .student-card-back .back-school-meta {
-            text-align: center;
-            font-size: 1.55mm;
-            color: #475569;
-            margin-bottom: 1.2mm;
-        }
-        .student-card-back .back-notes {
-            border: 0.2mm solid #cbd5e1;
-            border-radius: 0.8mm;
-            padding: 1.2mm 1.5mm;
-            background: rgba(255,255,255,0.9);
-            min-height: 18mm;
-        }
-        .student-card-back .back-note-item {
-            margin-bottom: 0.8mm;
-        }
-        .student-card-back .back-note-item:last-child {
+        .student-card-back .back-terms-list li:last-child {
             margin-bottom: 0;
         }
-        .student-card-back .back-footer {
+        .student-card-back .back-bottom-accent {
             position: absolute;
+            bottom: 0;
             left: 0;
             right: 0;
-            bottom: 0;
-            height: 6.5mm;
-            padding: 1mm 3mm 1.2mm;
-            box-sizing: border-box;
+            height: 1.45mm;
             background: #1e3a8a;
-            color: #ffffff;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            font-size: 1.5mm;
-        }
-        .student-card-back .back-validity {
-            font-weight: 700;
-            letter-spacing: 0.15mm;
-        }
-        .student-card-back .back-contact {
-            text-align: right;
-            max-width: 44mm;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            border-top: 0.25mm solid #d4af37;
         }
         .print-placeholder {
             width: 90mm;
@@ -629,11 +634,13 @@
                 img.style.margin = '0';  
                 img.style.padding = '0';  
                 cardHeader.appendChild(img);  
+                refreshBackCardPreview();
 
                 const kopPreview = document.getElementById('kop-preview');  
                 if (kopPreview) { kopPreview.innerHTML = '<img src="' + kopUrl + '" class="max-h-full max-w-full object-contain">'; }  
             }  
   
+            refreshBackCardPreview();
             ambilKopKartu().then(kop => { if (kop) tampilkanKopKartu(kop); });  
   
             const inputKop = document.getElementById('inputKopKartu');
@@ -929,50 +936,73 @@
             return placeholder;
         }
 
+        // V21R174: satu sumber kop untuk bagian depan, belakang dan pratinjau.
         function createBackCard(student) {
             const card = document.createElement('div');
             card.className = 'student-card-back';
 
             const schoolName = @json($schoolData['nama'] ?? 'NAMA SEKOLAH');
             const schoolAddress = @json(trim(($schoolData['alamat_jalan'] ?? '') . ' ' . ($schoolData['kabupaten_kota'] ?? '')));
-            const schoolMeta = [
-                @json($schoolData['npsn'] ?? ''),
-                @json($schoolData['provinsi'] ?? ''),
-                @json($schoolData['kode_pos'] ?? '')
-            ].filter(Boolean).join(' · ');
-            const schoolWebsite = @json($schoolData['website'] ?? '');
-            const schoolEmail = @json($schoolData['email'] ?? '');
-            const validityText = 'Berlaku selama menjadi peserta didik';
-            const contactPieces = [schoolWebsite, schoolEmail].filter(Boolean);
-            const footerContact = contactPieces.length ? contactPieces.join(' | ') : (schoolAddress || 'Jika ditemukan harap dikembalikan ke sekolah');
+            const namaSekolah = String(schoolName || 'NAMA SEKOLAH').trim();
 
-            card.innerHTML = '' +
-                '<div class="back-title">Bagian Belakang Kartu Pelajar</div>' +
-                '<div class="back-body">' +
-                    '<div class="back-school-name">' + escapeHtml(schoolName || 'Nama Sekolah') + '</div>' +
-                    '<div class="back-school-meta">' + escapeHtml([schoolAddress, schoolMeta].filter(Boolean).join(' · ')) + '</div>' +
-                    '<div class="back-notes">' +
-                        '<div class="back-note-item">1. Kartu ini wajib dibawa saat diperlukan untuk layanan sekolah.</div>' +
-                        '<div class="back-note-item">2. Tidak boleh dipindahtangankan kepada pihak lain.</div>' +
-                        '<div class="back-note-item">3. Jika ditemukan, harap dikembalikan ke ' + escapeHtml(schoolName || 'sekolah') + '.</div>' +
-                        '<div class="back-note-item">4. Pemilik: <strong>' + escapeHtml(student.nama || '-') + '</strong>.</div>' +
-                    '</div>' +
-                '</div>' +
-                '<div class="back-footer">' +
-                    '<div class="back-validity">' + validityText + '</div>' +
-                    '<div class="back-contact">' + escapeHtml(footerContact) + '</div>' +
-                '</div>';
+            const backHeader = document.createElement('div');
+            backHeader.className = 'back-header';
+            const frontHeader = document.querySelector('#student-card .card-header');
+            if (frontHeader) {
+                backHeader.appendChild(frontHeader.cloneNode(true));
+            } else {
+                const fallback = document.createElement('div');
+                fallback.className = 'kop-teks-fallback';
+                const title = document.createElement('div');
+                title.className = 'school-name';
+                title.textContent = namaSekolah;
+                const address = document.createElement('div');
+                address.className = 'school-address';
+                address.textContent = schoolAddress;
+                fallback.appendChild(title);
+                fallback.appendChild(address);
+                backHeader.appendChild(fallback);
+            }
+            card.appendChild(backHeader);
 
+            const divider = document.createElement('div');
+            divider.className = 'back-divider';
+            card.appendChild(divider);
+
+            const terms = document.createElement('div');
+            terms.className = 'back-terms';
+            const heading = document.createElement('div');
+            heading.className = 'back-terms-heading';
+            heading.textContent = 'KETENTUAN:';
+            terms.appendChild(heading);
+
+            const list = document.createElement('ol');
+            list.className = 'back-terms-list';
+            const items = [
+                'Kartu ini adalah tanda pengenal resmi siswa ' + namaSekolah + '.',
+                'Kartu ini juga berlaku sebagai Kartu Anggota Perpustakaan ' + namaSekolah + '.',
+                'Pemilik kartu ini bertanggung jawab untuk menjaga dan menyimpan dengan sebaik-baiknya.',
+                'Jika menemukan kartu ini, harap dikembalikan ke ' + namaSekolah + '.',
+                'Kartu ini berlaku selama pemilik berstatus sebagai siswa ' + namaSekolah + '.'
+            ];
+            items.forEach(function (teks) {
+                const item = document.createElement('li');
+                item.textContent = teks; // Aman terhadap nama sekolah yang berisi karakter HTML.
+                list.appendChild(item);
+            });
+            terms.appendChild(list);
+            card.appendChild(terms);
+
+            const accent = document.createElement('div');
+            accent.className = 'back-bottom-accent';
+            card.appendChild(accent);
             return card;
         }
 
-        function escapeHtml(value) {
-            return String(value || '')
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#039;');
+        function refreshBackCardPreview() {
+            const preview = document.getElementById('student-card-back-preview');
+            if (!preview) return;
+            preview.replaceChildren(createBackCard(null));
         }
 
         function createPrintCard(student) {  
