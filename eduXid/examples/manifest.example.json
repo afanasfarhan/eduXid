@@ -1,0 +1,20 @@
+{
+  "schema": "EDUXID-RELEASE-V2",
+  "version": "1.8.0",
+  "min_supported_version": "1.5.0",
+  "channel": "stable",
+  "released_at": "2026-10-03T16:00:00+07:00",
+  "requires_restart": true,
+  "components": {
+    "core": true,
+    "school": true,
+    "teacher": true
+  },
+  "files": {
+    "payload/core/app/Example.php": "SHA256_64_HEX",
+    "payload/school/resources/views/admin/example.blade.php": "SHA256_64_HEX",
+    "payload/teacher/resources/views/guru/example.blade.php": "SHA256_64_HEX"
+  },
+  "signature_algorithm": "Ed25519",
+  "signature": "BASE64_ED25519_SIGNATURE"
+}

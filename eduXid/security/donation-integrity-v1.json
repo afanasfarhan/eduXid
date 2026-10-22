@@ -1,0 +1,15 @@
+{
+    "schema": "EDUXID-DONATION-INTEGRITY-V1",
+    "signature_algorithm": "Ed25519",
+    "files": {
+        "app/Http/Controllers/DonationController.php": "dd58616b3a041e1767ac3c69eb4a038bb20634aa9de998424072525e4fd030eb",
+        "app/Services/DonationStatusService.php": "7666b544d80eb30705d113017a7fd7b9c55c7d0395ed35ac2b09301f42c902e0",
+        "resources/views/about/index.blade.php": "cae60e40e5e6a966c03fa0e3daea01f088373cf887fcbfea9c6922d285ef4e46",
+        "resources/views/layouts/partials/donation-reminder.blade.php": "26548f0c6544913085e1815bc9aa6aace092ce7721078a2d656bcb0401da42a7",
+        "resources/views/layouts/app.blade.php": "79b959b80a699dcf60c6e2ac42a91dfa81c8bb7b7cdd8ff23ac924bc74dd6fda",
+        "routes/web.php": "a5bf1979a4139de2b4c5ee768fba77506ba8047baaa2807252e6ec0ac3d9cf24",
+        "bootstrap/app.php": "51d89063f6b2fe77450553174d7435d287df061fc73b3df42ed4ab97b44f15b9",
+        "app/Http/Middleware/VerifyDonationIntegrityV21.php": "84722f0b3a6448a21e8d46cc2ee8e03730a7de17c03afe346060bdef15fc2c45"
+    },
+    "signature": "l4dGxQ1tyzrfpm4ImeDF5mOKpcoU0hcoadvFgng6J3iczgh7v9TLpSc3XwDi+bShHer6sEfsz2u0tPkgn6w+Cg=="
+}

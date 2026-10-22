@@ -1,0 +1,43 @@
+eduXid LJK OMR V1.1.0 — SELF TEST
+Template: LJK-A4-V2
+Build: 2026-10-03
+
+STATIC
+PASS PHP syntax: controller, service, 2 migration, route, installer, menu updater.
+PASS JavaScript syntax: eduxid-ljk-omr.js + eduxid-ljk-batch.js.
+PASS Inline JS halaman LJK setelah @json disubstitusi.
+PASS Blade structural counts: @if/@endif, @foreach/@endforeach, @php/@endphp, div, section.
+
+TEMPLATE
+PASS LJK-A4-V2.pdf = 1 halaman A4 portrait.
+PASS template fisik dan calibration baseline V1.0.1 dipertahankan.
+
+OMR REGRESSION
+PASS core functions detectMarkers/analyzeNisn/analyzeAnswers/homography tetap ada dan algoritma inti tidak diubah dari V1.0.1.
+Baseline sintetis V1.0.1: NISN 0071234567, PG, Majemuk A,C,E, B/S, blank, dan perspective warp lulus.
+
+BATCH
+PASS UI maksimum 200 lembar aktif.
+PASS memory chunk 12 lembar; canvas penuh hasil Siap dilepas setelah validasi.
+PASS batch preview API maksimum 100 per request.
+PASS batch finalize UI chunk = 50.
+PASS duplikat NISN memiliki jalur pilih/abaikan.
+PASS review manual memvalidasi ulang ke server.
+PASS batch audit retry dihitung dari rows ljk_results dengan batch_uuid (idempotent).
+PASS context guard membersihkan antrean bila Paket Ujian/tanggal diganti setelah batch dimulai.
+
+PRIVACY
+PASS serverPayload tidak membawa File/Blob/Canvas/scan image.
+PASS nilai dihitung kembali oleh Laravel; kunci tidak dikirim ke browser.
+PASS raw image tidak masuk Cloud.
+
+INSTALLER
+PASS dua kali eksekusi: route include=1, Pindai LJK desktop+mobile=2, Paket Ujian desktop+mobile=2.
+PASS backup otomatis setiap eksekusi.
+
+PDF
+PASS fallback: tanpa PDF.js, multi JPG/PNG/WebP tetap berfungsi.
+CHECK manual: tools/install_pdfjs_windows.ps1 membutuhkan internet sekali untuk mengunduh PDF.js; sesudah tersimpan, render PDF lokal/offline.
+
+WAJIB UJI LAPANGAN
+Cetak template skala 100%, isi dengan alat tulis nyata, lalu uji scanner dan kamera HP sebelum menetapkan threshold sebagai produksi sekolah.

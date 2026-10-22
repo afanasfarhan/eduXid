@@ -1,0 +1,25 @@
+Tambahkan middleware berikut PADA ROUTE LAMA, jangan membuat route duplikat:
+
+use App\Http\Middleware\TriggerUpdateAfterSync;
+
+Contoh:
+
+Route::post('/pengaturan/pull-master', [PengaturanController::class, 'pullMasterDataApi'])
+    ->middleware(TriggerUpdateAfterSync::class)
+    ->name('guru.pullMasterDataApi');
+
+Route::post('/pengaturan/push-grades', [PengaturanController::class, 'pushGradesApi'])
+    ->middleware(TriggerUpdateAfterSync::class)
+    ->name('guru.pushGradesApi');
+
+Route::post('/pengaturan/pull-master-cloud', [PengaturanController::class, 'pullMasterDataCloud'])
+    ->middleware(TriggerUpdateAfterSync::class)
+    ->name('guru.pullMasterDataCloud');
+
+Route::post('/pengaturan/push-workproducts-cloud', [PengaturanController::class, 'pushWorkProductsCloud'])
+    ->middleware(TriggerUpdateAfterSync::class)
+    ->name('guru.pushWorkProductsCloud');
+
+Route::post('/lms/sync/auto', [LmsSyncController::class, 'sync'])
+    ->middleware(TriggerUpdateAfterSync::class)
+    ->name('lms.sync.auto');

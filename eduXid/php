@@ -1,0 +1,25 @@
+========================================
+                 eduXid 
+    Smart School Management Flatform 
+        Developed by Anas Farhan
+========================================
+
+Menyiapkan Server eduXid...
+
+[1/4] Membersihkan cache lama...
+[2/4] Menghubungkan folder storage...
+[3/4] Mengoptimasi konfigurasi aplikasi...
+[4/4] Mengatur akses jaringan (Port 8000)...
+
+========================================
+      Sistem eduXid siap digunakan!
+========================================
+
+Jangan tutup jendela ini selama Anda bekerja.
+Tekan CTRL + C atau tutup (X) jendela ini untuk menghentikan server.
+
+
+   INFO  Server running on [http://0.0.0.0:8000].  
+
+  Press Ctrl+C to stop the server
+

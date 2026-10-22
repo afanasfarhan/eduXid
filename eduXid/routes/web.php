@@ -1,0 +1,793 @@
+<?php
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
+
+use App\Http\Controllers\LocalMediaController;
+use App\Http\Controllers\CbtCorrectionController;
+use App\Http\Controllers\AbsensiController;
+use App\Http\Controllers\AdminController;
+use App\Http\Controllers\Admin\CloudAdminController;
+use App\Http\Controllers\Admin\UpdateController;
+use App\Http\Controllers\Api\CentralUpdateController;
+use App\Http\Controllers\Api\SeatingController;
+use App\Http\Controllers\Api\SikapController;
+use App\Http\Controllers\Auth\AuthenticatedSessionController;
+use App\Http\Controllers\Auth\AcademicPeriodController;
+use App\Http\Controllers\BackupController;
+use App\Http\Controllers\BankSoalController;
+use App\Http\Controllers\BkController;
+use App\Http\Controllers\CbtController;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DonationController;
+use App\Http\Controllers\EkskulController;
+use App\Http\Controllers\ExamController;
+use App\Http\Controllers\ExamAdministrationController;
+use App\Http\Controllers\HomeroomController;
+use App\Http\Controllers\KartuPelajarController;
+use App\Http\Controllers\KelasController;
+use App\Http\Controllers\LocalUpdateReleaseController;
+use App\Http\Controllers\KokurikulerController;
+use App\Http\Controllers\LmsAssignmentController;
+use App\Http\Controllers\LmsCourseController;
+use App\Http\Controllers\LmsMaterialController;
+use App\Http\Controllers\LmsSubmissionReviewController;
+/*
+ * [NS-FIX] Controller siswa berada di namespace Siswa\ —
+ * import yang salah namespace pernah menyebabkan
+ * ReflectionException pada route:list dan 500 pada /siswa/lms.
+ */
+use App\Http\Controllers\Siswa\LmsSiswaController;
+use App\Http\Controllers\LmsSyncController;
+use App\Http\Controllers\LmsTopicController;
+use App\Http\Controllers\MengajarController;
+use App\Http\Controllers\NilaiController;
+use App\Http\Controllers\PembelajaranController;
+use App\Http\Controllers\PengaturanController;
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\RaporController;
+use App\Http\Controllers\StudentController;
+use App\Http\Controllers\SuratController;
+use App\Http\Controllers\SyncDeviceController;
+use App\Http\Controllers\TeacherController;
+use App\Http\Controllers\WaliKelasController;
+
+use App\Models\LmsMaterial;
+use App\Services\UpdateClientService;
+use App\Services\UpdateService;
+
+// Broadcast V1 - role-scope is validated locally AND on Cloud.
+Route::middleware(['auth', 'verified', 'role:admin,guru,wali_kelas,guru_bk,kepala_sekolah,pengajar'])->group(function () {
+    Route::get('/pesan-pengumuman', [\App\Http\Controllers\BroadcastMessageController::class, 'index'])->name('broadcast.index');
+    Route::get('/pesan-pengumuman/preview', [\App\Http\Controllers\BroadcastMessageController::class, 'preview'])->name('broadcast.preview');
+    Route::post('/pesan-pengumuman', [\App\Http\Controllers\BroadcastMessageController::class, 'send'])->name('broadcast.send');
+    Route::delete('/pesan-pengumuman/pesan/{messageId}', [\App\Http\Controllers\BroadcastMessageController::class, 'destroy'])->name('broadcast.destroy');
+});
+
+Route::get('/media/{path}', [LocalMediaController::class, 'show'])
+    ->where('path', '.*')
+    ->name('local-media.show');
+
+/*
+|--------------------------------------------------------------------------
+| API LOKAL — dipakai PWA / perangkat sync / cloud (tanpa sesi web)
+|--------------------------------------------------------------------------
+*/
+
+Route::get('/api/local/ping', function () {
+    return response()->json(['status' => 'online']);
+})->name('api.local.ping');
+
+/*
+|--------------------------------------------------------------------------
+| P6 — Central Publisher Update API
+|--------------------------------------------------------------------------
+|
+| Endpoint ini berada DI LUAR middleware local-sync.
+| Digunakan Admin/Sekolah untuk mengambil signed release resmi dari
+| publisher pusat. Authenticity release tetap diverifikasi dengan Ed25519.
+|
+*/
+
+Route::get('/api/update/check', [CentralUpdateController::class, 'check'])
+    ->name('api.update.check');
+
+Route::get('/api/update/download', [CentralUpdateController::class, 'download'])
+    ->name('api.update.download');
+
+Route::get('/pwa/cloud-login', function () {
+    $npsn = trim((string) DB::table('schools')->value('npsn'));
+
+    return view('pwa.cloud-login', ['npsn' => $npsn]);
+})->name('pwa.cloud.login');
+
+Route::middleware('local-sync')->group(function () {
+
+    Route::post('/api/local/sync-device/register', [SyncDeviceController::class, 'register'])
+        ->name('api.local.syncDevice.register');
+
+    Route::get('/api/local/check-version', [LocalUpdateReleaseController::class, 'checkVersion'])
+        ->name('api.local.checkVersion');
+
+    Route::get('/api/local/download-patch', [LocalUpdateReleaseController::class, 'downloadPatch'])
+        ->name('api.local.downloadPatch');
+
+    Route::post('/api/local/lms/sync', [LmsSyncController::class, 'sync'])
+        ->name('api.local.lms.sync');
+
+    Route::get('/api/local/lms/sync/status', [LmsSyncController::class, 'status'])
+        ->name('api.local.lms.sync.status');
+
+    Route::post('/api/local/lms/sync/reset', [LmsSyncController::class, 'resetCursor'])
+        ->name('api.local.lms.sync.reset');
+
+    Route::get('/api/local/lms/material/{syncId}/download', function (string $syncId) {
+        if (!preg_match('/^[0-9a-fA-F-]{36}$/', $syncId)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'sync_id materi tidak valid.',
+            ], 400);
+        }
+
+        $material = LmsMaterial::where('sync_id', $syncId)->first();
+
+        if (!$material) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Materi tidak ditemukan.',
+            ], 404);
+        }
+
+        if (empty($material->file_path) || !is_string($material->file_path)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Materi tidak memiliki file.',
+            ], 404);
+        }
+
+        $disk = Storage::disk('public');
+
+        if (!$disk->exists($material->file_path)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'File materi tidak ditemukan di server.',
+                'file_path' => $material->file_path,
+            ], 404);
+        }
+
+        $downloadName = $material->file_name ?: basename($material->file_path);
+        $mimeType = $material->mime_type ?: $disk->mimeType($material->file_path) ?: 'application/octet-stream';
+
+        return $disk->download($material->file_path, $downloadName, [
+            'Content-Type' => $mimeType,
+        ]);
+    })
+        ->where('syncId', '[0-9a-fA-F-]{36}')
+        ->name('api.local.lms.material.download');
+
+    Route::get('/api/local/master-data', [AdminController::class, 'eksporMasterApi'])
+        ->name('api.local.masterData');
+
+    Route::post('/api/local/sync-grades', [PengaturanController::class, 'imporTransaksiAdminApi'])
+        ->name('api.local.syncGrades');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Halaman publik / umum
+|--------------------------------------------------------------------------
+*/
+
+Route::get('/', function () {
+    if (auth()->check()) {
+        return redirect()->route('dashboard');
+    }
+    return redirect()->route('login');
+})->name('home');
+
+Route::prefix('cbt')->name('cbt.')->group(function () {
+    Route::get('/', [CbtController::class, 'index'])->name('index');
+    Route::post('/masuk', [CbtController::class, 'masuk'])->name('masuk');
+    Route::get('/ujian/{sessionId}', [CbtController::class, 'ujian'])->name('ujian');
+    Route::post('/auto-save/{sessionId}', [CbtController::class, 'autoSave'])->name('autoSave');
+    Route::post('/submit/{sessionId}', [CbtController::class, 'submit'])->name('submit');
+    Route::get('/selesai', [CbtController::class, 'selesai'])->name('selesai');
+});
+
+Route::get('/about', function () {
+    return view('about.index');
+})->middleware('auth')->name('about.index');
+
+Route::middleware('auth')->group(function () {
+    Route::get('/donasi/status', [DonationController::class, 'status'])->name('donasi.status');
+    Route::post('/donasi/klaim', [DonationController::class, 'claim'])->name('donasi.claim');
+    Route::post('/donasi/verifikasi', [DonationController::class, 'redeem'])->name('donasi.redeem');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Profil & pemilihan semester
+|--------------------------------------------------------------------------
+*/
+Route::middleware('auth')->group(function () {
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+});
+
+Route::middleware('auth')->group(function () {
+    Route::get('/pilih-semester', [AcademicPeriodController::class, 'show'])->name('pilih.semester');
+    Route::post('/pilih-semester', [AcademicPeriodController::class, 'store'])->name('pilih.semester.store');
+});
+
+/*
+|--------------------------------------------------------------------------
+| LMS Siswa
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware([
+    'auth',
+    'verified',
+    'semester.selected',
+    'role:siswa',
+])
+    ->prefix('siswa/lms')
+    ->name('siswa.lms.')
+    ->group(function () {
+        Route::get('/', [LmsSiswaController::class, 'index'])->name('index');
+        Route::get('/courses/{course}', [LmsSiswaController::class, 'course'])->name('course');
+        Route::get('/topics/{topic}', [LmsSiswaController::class, 'topic'])->name('topic');
+        Route::get('/assignments/{assignment}', [LmsSiswaController::class, 'assignment'])->name('assignment');
+        Route::get('/assignments/{assignment}/cbt', [LmsSiswaController::class, 'startCbt'])->name('assignment.cbt');
+        Route::get('/cbt/{examSyncId}', [LmsSiswaController::class, 'cbtUjian'])->name('cbt.ujian');
+        Route::post('/assignments/{assignment}/submit', [LmsSiswaController::class, 'submitAssignment'])->name('assignment.submit');
+    });
+
+/*
+|--------------------------------------------------------------------------
+| API internal (seating & sikap)
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware('auth')->group(function () {
+    Route::post('/api/seating/update', [SeatingController::class, 'update'])
+        ->middleware('role:admin,guru,wali_kelas')
+        ->name('api.seating.update');
+    Route::post('/api/seating/reset', [SeatingController::class, 'reset'])
+        ->middleware('role:admin,guru,wali_kelas')
+        ->name('api.seating.reset');
+    Route::post('/api/sikap/update', [SikapController::class, 'update'])
+        ->middleware('role:guru,wali_kelas,guru_bk')
+        ->name('api.sikap.update');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Data guru (admin & tendik)
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware(['auth', 'verified', 'role:admin,tendik'])->group(function () {
+    Route::get('/guru', [TeacherController::class, 'index'])->name('guru.index');
+    Route::post('/guru/store', [TeacherController::class, 'store'])->name('guru.store');
+    Route::put('/guru/{id}/update', [TeacherController::class, 'update'])->name('guru.update');
+    Route::delete('/guru/{id}/destroy', [TeacherController::class, 'destroy'])->name('guru.destroy');
+    Route::get('/guru/export', [TeacherController::class, 'export'])->name('guru.export');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Admin
+|--------------------------------------------------------------------------
+*/
+
+Route::prefix('admin')
+    ->middleware(['auth', 'verified', 'role:admin'])
+    ->group(function () {
+
+        Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('admin.dashboard');
+
+        Route::post('/siswa/store', [StudentController::class, 'store'])->name('siswa.store');
+        Route::put('/siswa/{id}/update', [StudentController::class, 'update'])->name('siswa.update');
+        Route::delete('/siswa/{id}/destroy', [StudentController::class, 'destroy'])->name('siswa.destroy');
+
+        Route::get('/kelas', [KelasController::class, 'index'])->name('admin.kelas');
+        Route::post('/kelas/store', [KelasController::class, 'store'])->name('admin.kelas.store');
+        Route::put('/kelas/{id}/update-wali', [KelasController::class, 'updateWali'])->name('admin.kelas.updateWali');
+        Route::delete('/kelas/{id}/destroy', [KelasController::class, 'destroy'])->name('admin.kelas.destroy');
+        Route::get('/kelas/{id}/anggota', [KelasController::class, 'anggota'])->name('admin.kelas.anggota');
+        Route::post('/kelas/{id}/anggota', [KelasController::class, 'anggotaStore'])->name('admin.kelas.anggotaStore');
+        Route::delete('/kelas/anggota/{enrollment_id}/destroy', [KelasController::class, 'anggotaDestroy'])->name('admin.kelas.anggotaDestroy');
+
+        Route::get('/kokurikuler', [KokurikulerController::class, 'index'])->name('admin.kokurikuler');
+        Route::post('/kokurikuler/store', [KokurikulerController::class, 'store'])->name('admin.kokurikuler.store');
+        Route::delete('/kokurikuler/{id}/destroy', [KokurikulerController::class, 'destroy'])->name('admin.kokurikuler.destroy');
+
+        Route::get('/pembelajaran', [PembelajaranController::class, 'index'])->name('admin.pembelajaran');
+        Route::post('/pembelajaran/store', [PembelajaranController::class, 'store'])->name('admin.pembelajaran.store');
+        Route::put('/pembelajaran/{id}/update', [PembelajaranController::class, 'update'])->name('admin.pembelajaran.update');
+        Route::delete('/pembelajaran/{id}/destroy', [PembelajaranController::class, 'destroy'])->name('admin.pembelajaran.destroy');
+
+        Route::get('/pengaturan', [AdminController::class, 'pengaturan'])->name('admin.pengaturan');
+        Route::post('/pengaturan/reset-password', [AdminController::class, 'resetPassword'])->name('admin.resetPassword');
+        Route::post('/pengaturan/ambil-aktivasi', [AdminController::class, 'takeInitialPassword'])->name('admin.ambilAktivasi');
+        Route::post('/pengaturan/upload-foto-zip', [AdminController::class, 'uploadFotoZip'])->name('admin.uploadFotoZip');
+
+        Route::get('/pengaturan/backup/create', [BackupController::class, 'createBackup'])->name('admin.backup.create');
+        Route::post('/pengaturan/backup/restore', [BackupController::class, 'restoreBackup'])->name('admin.backup.restore');
+
+        Route::post('/pengaturan/impor-backup-guru', [PengaturanController::class, 'imporBackupGuruAdmin'])->name('admin.imporBackupGuru');
+        Route::post('/pengaturan/ekspor-backup-guru', [PengaturanController::class, 'eksporBackupGuruAdmin'])->name('admin.eksporBackupGuru');
+
+        Route::get('/pengaturan/impor', [AdminController::class, 'impor'])->name('admin.impor');
+        Route::post('/pengaturan/impor/sync-api', [AdminController::class, 'syncApi'])->name('admin.impor.syncApi');
+        Route::post('/pengaturan/impor/impor-master', [AdminController::class, 'imporMaster'])->name('admin.imporMaster');
+
+        Route::get('/pengaturan/impor/download-template-sekolah', [AdminController::class, 'downloadTemplateSekolah'])->name('admin.impor.templateSekolah');
+        Route::post('/pengaturan/impor/impor-excel-sekolah', [AdminController::class, 'imporExcelSekolah'])->name('admin.imporExcelSekolah');
+        Route::get('/pengaturan/impor/download-template-siswa', [AdminController::class, 'downloadTemplateSiswa'])->name('admin.impor.templateSiswa');
+        Route::get('/pengaturan/impor/download-template-guru', [AdminController::class, 'downloadTemplateGuru'])->name('admin.impor.templateGuru');
+        Route::get('/pengaturan/impor/download-template-kelas', [AdminController::class, 'downloadTemplateKelas'])->name('admin.impor.templateKelas');
+        Route::get('/pengaturan/impor/download-template-pembelajaran', [AdminController::class, 'downloadTemplatePembelajaran'])->name('admin.impor.templatePembelajaran');
+        Route::get('/pengaturan/impor/download-template-mapel', [AdminController::class, 'downloadTemplateMapel'])->name('admin.impor.templateMapel');
+        Route::post('/pengaturan/impor/impor-excel-siswa', [AdminController::class, 'imporExcelSiswa'])->name('admin.imporExcelSiswa');
+        Route::post('/pengaturan/impor/impor-excel-guru', [AdminController::class, 'imporExcelGuru'])->name('admin.imporExcelGuru');
+        Route::post('/pengaturan/impor/impor-excel-kelas', [AdminController::class, 'imporExcelKelas'])->name('admin.imporExcelKelas');
+        Route::post('/pengaturan/impor/impor-excel-pembelajaran', [AdminController::class, 'imporExcelPembelajaran'])->name('admin.imporExcelPembelajaran');
+        Route::post('/pengaturan/impor/impor-excel-mapel', [AdminController::class, 'imporExcelMapel'])->name('admin.imporExcelMapel');
+
+        Route::get('/rapor/layout-mapel', [RaporController::class, 'layoutMapel'])->name('admin.layoutMapel');
+        Route::post('/rapor/layout-mapel', [RaporController::class, 'storeLayoutMapel'])->name('admin.layoutMapel.store');
+
+        Route::get('/ekspor-master', [AdminController::class, 'eksporMasterPage'])->name('admin.eksporMaster.page');
+        Route::get('/ekspor-master/download', [AdminController::class, 'eksporMaster'])->name('admin.eksporMaster');
+
+        Route::post('/pengaturan/impor-transaksi', [PengaturanController::class, 'imporTransaksiAdmin'])->name('admin.imporTransaksi');
+
+        Route::post('/pengaturan/clean-up', [AdminController::class, 'cleanUpSystem'])->name('admin.cleanUpSystem');
+        Route::post('/pengaturan/reset-total', [AdminController::class, 'resetTotalData'])->name('admin.resetTotalData');
+
+        Route::get('/update', [UpdateController::class, 'index'])->name('admin.update');
+        Route::post('/update/patch/{version}', [UpdateController::class, 'install'])
+            ->where('version', '[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?')
+            ->name('admin.update.install');
+        Route::post('/update/upload', [UpdateController::class, 'uploadPatch'])->name('admin.update.upload');
+
+        /*
+         * ============================================================
+         * [CLOUD-MASTER] #2 — Admin mengunggah snapshot Data Pokok
+         * ke eduXid Cloud (auth: Admin Key dari Setup Cloud di
+         * sisi controller/service). Guru menariknya lewat
+         * guru.pullMasterDataCloud di bawah.
+         * ============================================================
+         */
+        Route::post('/eduxid-cloud/master-data/push', [CloudAdminController::class, 'pushMasterDataCloud'])
+            ->name('admin.pushMasterDataCloud');
+
+        /*
+         * ============================================================
+         * EDUXID CLOUD (ADMIN) — enrollment, direktori akun, resync,
+         * DAN Setup Cloud [G1].
+         *
+         * Semua WAJIB berada DI DALAM grup auth+admin ini:
+         * - resyncDevice menggunakan Admin Key; tanpa auth, siapa pun
+         *   bisa menyalahgunakannya dengan menebak device_id.
+         * - Setup Cloud (setupSave/setupStatus) mengatur KUNCI SEKOLAH:
+         *   paling sensitif — tidak boleh bisa diakses tanpa login admin.
+         * ============================================================
+         */
+        Route::get('/eduxid-cloud', [CloudAdminController::class, 'index'])->name('admin.eduxid-cloud');
+        Route::post('/eduxid-cloud/enrollment/create', [CloudAdminController::class, 'createEnrollment'])->name('admin.eduxid.enrollment.create');
+        Route::post('/eduxid-cloud/student-accounts/push', [CloudAdminController::class, 'pushStudentAccounts'])->name('admin.eduxid.studentAccounts.push');
+        Route::post('/eduxid-cloud/teacher-accounts/push', [CloudAdminController::class, 'pushTeacherAccounts'])->name('admin.eduxid.teacherAccounts.push');
+        Route::post('/eduxid-cloud/device/resync', [CloudAdminController::class, 'resyncDevice'])->name('admin.eduxid.device.resync');
+
+        Route::get('/eduxid-cloud/setup/status', [CloudAdminController::class, 'setupStatus'])->name('admin.eduxid-cloud.setup.status');
+        Route::get('/eduxid-cloud/dashboard-card', [CloudAdminController::class, 'dashboardCardStatus'])->name('admin.eduxid-cloud.card.status');
+        Route::post('/eduxid-cloud/setup', [CloudAdminController::class, 'setupSave'])->name('admin.eduxid-cloud.setup');
+    });
+
+/*
+|--------------------------------------------------------------------------
+| Guru / Wali Kelas / Guru BK — Koreksi CBT
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware(['auth', 'role:guru,wali_kelas,guru_bk,pengajar'])->prefix('guru/cbt/koreksi')->group(function () {
+    Route::get('/', [CbtCorrectionController::class, 'index'])->name('guru.cbt.koreksi');
+    Route::get('/{session}', [CbtCorrectionController::class, 'show'])->name('guru.cbt.koreksi.show');
+    Route::post('/{session}/confirm', [CbtCorrectionController::class, 'confirm'])->name('guru.cbt.koreksi.confirm');
+    Route::post('/exam/{exam}/confirm-all', [CbtCorrectionController::class, 'confirmAll'])->name('guru.cbt.koreksi.confirmAll');
+
+    /*
+     * [F5] KOREKSI OTOMATIS — nilai seluruh sesi pending exam ini
+     * memakai kunci jawaban (hanya untuk exam full-objektif; sesi
+     * ber-esai otomatis dilewati confirmAllForExam).
+     */
+    Route::post('/exam/{exam}/auto-grade', [CbtCorrectionController::class, 'autoGrade'])
+        ->name('guru.cbt.koreksi.autoGrade');
+});
+
+Route::middleware([
+    'auth',
+    'verified',
+    'role:guru,wali_kelas,guru_bk,pengajar',
+])->group(function () {
+
+    Route::post('/lms/sync/auto', [LmsSyncController::class, 'sync'])->name('lms.sync.auto');
+
+    Route::get('/mengajar', [MengajarController::class, 'index'])->name('guru.mengajar');
+
+    Route::get('/mengajar/{id}/nilai', [NilaiController::class, 'index'])->name('guru.nilai');
+    Route::post('/mengajar/{id}/nilai', [NilaiController::class, 'store'])->name('guru.nilai.store');
+    Route::delete('/mengajar/{id}/nilai/destroy-pertemuan', [NilaiController::class, 'destroyPertemuan'])->name('guru.nilai.destroyPertemuan');
+    Route::get('/mengajar/{id}/nilai-akhir', [NilaiController::class, 'nilaiAkhir'])->name('guru.nilaiAkhir');
+    Route::post('/mengajar/{id}/nilai-akhir', [NilaiController::class, 'nilaiAkhirStore'])->name('guru.nilaiAkhir.store');
+    Route::get('/mengajar/{id}/nilai-akhir/export', [NilaiController::class, 'nilaiAkhirExport'])->name('guru.nilaiAkhir.export');
+    Route::get('/mengajar/{id}/nilai/export', [NilaiController::class, 'nilaiExport'])->name('guru.nilai.export');
+
+    Route::get('/wali-kelas', [WaliKelasController::class, 'index'])->name('guru.waliKelas');
+    Route::post('/wali-kelas', [WaliKelasController::class, 'store'])->name('guru.waliKelas.store');
+    Route::post('/wali-kelas/deskripsi-otomatis', [WaliKelasController::class, 'generateDescriptions'])->name('guru.waliKelas.generateDescriptions');
+    Route::post('/wali-kelas/deskripsi/hapus', [WaliKelasController::class, 'destroyDescriptions'])->name('guru.waliKelas.destroyDescriptions');
+
+    Route::get('/bk', [BkController::class, 'index'])->name('guru.bk');
+    Route::post('/bk', [BkController::class, 'store'])->name('guru.bk.store');
+    Route::delete('/bk/{id}', [BkController::class, 'destroy'])->name('guru.bk.destroy');
+    Route::get('/bk/export', [BkController::class, 'export'])->name('guru.bk.export');
+
+    Route::get('/ekskul', [EkskulController::class, 'index'])->name('guru.ekskul');
+    Route::post('/ekskul', [EkskulController::class, 'store'])->name('guru.ekskul.store');
+    Route::post('/ekskul/add-member', [EkskulController::class, 'addMember'])->name('guru.ekskul.addMember');
+    Route::delete('/ekskul/remove-member/{student_id}', [EkskulController::class, 'removeMember'])->name('guru.ekskul.removeMember');
+
+    Route::get('/kokurikuler-guru', [KokurikulerController::class, 'indexGuru'])->name('guru.kokurikuler');
+    Route::post('/kokurikuler-guru', [KokurikulerController::class, 'storeGuru'])->name('guru.kokurikuler.store');
+
+    Route::get('/absensi/history/{student_id}', [AbsensiController::class, 'history'])->name('absensi.history');
+
+    Route::prefix('ujian')->middleware('role:guru,wali_kelas,pengajar')->group(function () {
+        Route::get('/bank-soal', [BankSoalController::class, 'index'])->name('guru.bankSoal');
+        Route::get('/bank-soal/create', [BankSoalController::class, 'create'])->name('guru.bankSoal.create');
+        Route::post('/bank-soal', [BankSoalController::class, 'store'])->name('guru.bankSoal.store');
+        Route::get('/bank-soal/export', [BankSoalController::class, 'exportExcel'])->name('guru.bankSoal.export');
+        Route::post('/bank-soal/import', [BankSoalController::class, 'importExcel'])->name('guru.bankSoal.import');
+        Route::post('/bank-soal/upload-image', [BankSoalController::class, 'uploadImage'])->name('guru.bankSoal.uploadImage');
+        Route::get('/bank-soal/{id}/preview', [\App\Http\Controllers\BankSoalController::class, 'preview'])->name('guru.bankSoal.preview');
+        Route::get('/bank-soal/{id}/edit', [BankSoalController::class, 'edit'])->name('guru.bankSoal.edit');
+        Route::put('/bank-soal/{id}', [BankSoalController::class, 'update'])->name('guru.bankSoal.update');
+        Route::delete('/bank-soal/hapus-semua', [BankSoalController::class, 'destroyAll'])->name('guru.bankSoal.destroyAll');
+        Route::delete('/bank-soal/hapus-terpilih', [BankSoalController::class, 'destroySelected'])->name('guru.bankSoal.destroySelected');
+        Route::delete('/bank-soal/{id}', [BankSoalController::class, 'destroy'])->name('guru.bankSoal.destroy');
+        Route::get('/cetak-soal', [BankSoalController::class, 'cetakIndex'])->name('guru.cetakSoal');
+        Route::post('/cetak-soal/pdf', [BankSoalController::class, 'cetakPdf'])->name('guru.cetakSoal.pdf');
+        Route::get('/cbt', [ExamController::class, 'index'])->name('guru.cbt');
+        Route::get('/cbt/create', [ExamController::class, 'create'])->name('guru.cbt.create');
+        Route::post('/cbt', [ExamController::class, 'store'])->name('guru.cbt.store');
+        Route::get('/cbt/{exam}/soal', [ExamController::class, 'addQuestions'])->name('guru.cbt.soal');
+        Route::post('/cbt/{exam}/soal', [ExamController::class, 'storeQuestions'])->name('guru.cbt.soal.store');
+        Route::post('/cbt/{exam}/sync-to-students', [ExamController::class, 'syncToStudents'])->name('guru.cbt.syncToStudents');
+        Route::post('/cbt/{exam}/activate', [ExamController::class, 'activate'])->name('guru.cbt.activate');
+        Route::post('/cbt/{exam}/deactivate', [ExamController::class, 'deactivate'])->name('guru.cbt.deactivate');
+    Route::post('/cbt/session/{session}/force-finish', [ExamController::class, 'forceFinish'])->name('guru.cbt.forceFinish');
+        Route::delete('/cbt/{exam}', [ExamController::class, 'destroy'])->name('guru.cbt.destroy');
+        Route::get('/cbt/export-hasil', [ExamController::class, 'exportHasil'])->name('guru.cbt.exportHasil');
+    });
+
+    Route::prefix('lms')->name('lms.')->group(function () {
+
+        Route::resource('courses', LmsCourseController::class);
+
+        Route::get('/courses/{course}/duplicate', [LmsCourseController::class, 'duplicateForm'])->name('courses.duplicate.form');
+        Route::post('/courses/{course}/duplicate', [LmsCourseController::class, 'duplicate'])->name('courses.duplicate');
+
+        Route::post('/courses/{course}/publish', [LmsCourseController::class, 'publish'])->name('courses.publish');
+        Route::post('/courses/{course}/unpublish', [LmsCourseController::class, 'unpublish'])->name('courses.unpublish');
+
+        Route::post('/courses/{course}/topics', [LmsTopicController::class, 'store'])->name('topics.store');
+        Route::put('/topics/{topic}', [LmsTopicController::class, 'update'])->name('topics.update');
+        Route::delete('/topics/{topic}', [LmsTopicController::class, 'destroy'])->name('topics.destroy');
+        Route::post('/topics/{topic}/publish', [LmsTopicController::class, 'publish'])->name('topics.publish');
+        Route::post('/topics/{topic}/unpublish', [LmsTopicController::class, 'unpublish'])->name('topics.unpublish');
+
+        Route::post('/topics/{topic}/materials', [LmsMaterialController::class, 'store'])->name('materials.store');
+        Route::get('/materials/{material}/edit', [LmsMaterialController::class, 'edit'])->name('materials.edit');
+        Route::put('/materials/{material}', [LmsMaterialController::class, 'update'])->name('materials.update');
+        Route::delete('/materials/{material}', [LmsMaterialController::class, 'destroy'])->name('materials.destroy');
+
+        Route::get('/topics/{topic}/assignments', [LmsAssignmentController::class, 'index'])->name('assignments.index');
+        Route::get('/topics/{topic}/assignments/create', [LmsAssignmentController::class, 'create'])->name('assignments.create');
+        Route::post('/topics/{topic}/assignments', [LmsAssignmentController::class, 'store'])->name('assignments.store');
+        Route::get('/assignments/{assignment}', [LmsAssignmentController::class, 'show'])->name('assignments.show');
+        Route::get('/assignments/{assignment}/edit', [LmsAssignmentController::class, 'edit'])->name('assignments.edit');
+        Route::put('/assignments/{assignment}', [LmsAssignmentController::class, 'update'])->name('assignments.update');
+        Route::post('/assignments/{assignment}/publish', [LmsAssignmentController::class, 'publish'])->name('assignments.publish');
+        Route::post('/assignments/{assignment}/unpublish', [LmsAssignmentController::class, 'unpublish'])->name('assignments.unpublish');
+        Route::delete('/assignments/{assignment}', [LmsAssignmentController::class, 'destroy'])->name('assignments.destroy');
+
+        Route::get('/assignments/{assignment}/submissions', [LmsSubmissionReviewController::class, 'index'])->name('assignments.submissions');
+        Route::post('/submissions/{submission}/grade', [LmsSubmissionReviewController::class, 'grade'])->name('submissions.grade');
+    });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Pengaturan Guru / Tendik
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware([
+    'auth',
+    'verified',
+    'role:guru,wali_kelas,guru_bk,tendik,kepala_sekolah',
+])->group(function () {
+
+    Route::get('/guru/pengaturan', [PengaturanController::class, 'indexGuru'])->name('guru.pengaturan');
+    Route::post('/guru/impor-transaksi', [PengaturanController::class, 'imporTransaksiGuru'])->name('guru.imporTransaksi');
+    Route::get('/pengaturan/ekspor-transaksi', [PengaturanController::class, 'eksporTransaksiGuru'])->name('guru.ekspor');
+    Route::post('/guru/impor-master', [PengaturanController::class, 'imporMasterGuru'])->name('guru.imporMaster');
+    Route::post('/pengaturan/server-ip', [PengaturanController::class, 'updateServerIp'])->name('guru.updateServerIp');
+    Route::post('/pengaturan/pull-master', [PengaturanController::class, 'pullMasterDataApi'])->name('guru.pullMasterDataApi');
+    Route::post('/pengaturan/push-grades', [PengaturanController::class, 'pushGradesApi'])->name('guru.pushGradesApi');
+
+    /*
+     * ============================================================
+     * [CLOUD-MASTER] #2 — Tarik Data Pokok VIA CLOUD.
+     * Jalur LAN (guru.pullMasterDataApi) tetap tersedia terpisah.
+     * Controller mengejek pairing: laptop wajib terpasangkan
+     * (sync_token tersedia) sebelum bisa menarik.
+     * ============================================================
+     */
+    Route::post('/pengaturan/pull-master-cloud', [PengaturanController::class, 'pullMasterDataCloud'])
+        ->name('guru.pullMasterDataCloud');
+
+    /*
+     * ============================================================
+     * [CLOUD-WORK] #3 — Kirim seluruh hasil pekerjaan guru
+     * VIA CLOUD sebagai entity teacher-routed: nilai harian,
+     * sikap, BK, catatan wali, rekap absensi rapor, ekskul,
+     * dan kokurikuler. Surat & bank soal TIDAK termasuk
+     * (tetap via LAN/flashdisk).
+     * ============================================================
+     */
+    Route::post('/pengaturan/push-workproducts-cloud', [PengaturanController::class, 'pushWorkProductsCloud'])
+        ->name('guru.pushWorkProductsCloud');
+
+    Route::get('/guru/update', function () {
+        $status = app(UpdateClientService::class)->status();
+        return view('guru.update', compact('status'));
+    })->name('guru.update.system');
+
+    Route::post('/guru/update/install/{version}', function (Request $request, string $version) {
+        if (!preg_match('/^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$/', $version)) {
+            return back()->with('error', 'Format versi tidak valid.');
+        }
+
+        try {
+            $patch = app(UpdateService::class)->updateTo($version);
+            return back()->with('success', 'Update berhasil ke versi ' . $patch->version);
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->with('error', 'Update gagal: ' . $e->getMessage());
+        }
+    })
+        ->where('version', '[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?')
+        ->name('guru.update.install.system');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Grup utama (setelah semester dipilih)
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware([
+    'auth',
+    'verified',
+    'semester.selected',
+])->group(function () {
+
+    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    /*
+     * ============================================================
+     * EDUXID CLOUD — PAIRING (satu endpoint, dua nama):
+     * - cloud.pair     → dipakai dashboard.blade.php
+     * - lms.cloud.pair → dipakai lms/courses/index.blade.php
+     * Keduanya menghasilkan URI & controller yang identik.
+     * Method POST — form/fetch di Blade wajib POST + CSRF.
+     * ============================================================
+     */
+    Route::post('/cloud/pair', [LmsCourseController::class, 'cloudPair'])->name('cloud.pair');
+    Route::post('/cloud/pair', [LmsCourseController::class, 'cloudPair'])->name('lms.cloud.pair');
+
+    Route::get('/siswa', [StudentController::class, 'index'])
+        ->middleware('role:admin,tendik,kepala_sekolah,guru,wali_kelas,guru_bk')
+        ->name('siswa.index');
+
+    Route::get('/siswa/export', [StudentController::class, 'export'])
+        ->middleware('role:admin,tendik,kepala_sekolah,guru,wali_kelas,guru_bk')
+        ->name('siswa.export');
+
+    Route::get('/rombel', [HomeroomController::class, 'index'])
+        ->middleware('role:admin,kepala_sekolah,guru,wali_kelas,guru_bk')
+        ->name('rombel.index');
+
+    Route::get('/rombel/{id}', [HomeroomController::class, 'show'])
+        ->middleware('role:admin,kepala_sekolah,guru,wali_kelas,guru_bk')
+        ->name('rombel.show');
+
+    Route::get('/absensi', [AbsensiController::class, 'index'])
+        ->middleware('role:admin,kepala_sekolah,guru_bk')
+        ->name('absensi.index');
+
+    Route::post('/absensi/store', [AbsensiController::class, 'store'])
+        ->middleware('role:admin,kepala_sekolah,guru_bk')
+        ->name('absensi.store');
+
+    Route::put('/absensi/{id}/update', [AbsensiController::class, 'update'])
+        ->middleware('role:admin,kepala_sekolah,guru_bk')
+        ->name('absensi.update');
+
+    Route::delete('/absensi/{id}/destroy', [AbsensiController::class, 'destroy'])
+        ->middleware('role:admin,kepala_sekolah,guru_bk')
+        ->name('absensi.destroy');
+
+    Route::get('/rapor', [RaporController::class, 'index'])
+        ->middleware('role:admin,kepala_sekolah,guru,wali_kelas,guru_bk')
+        ->name('rapor.index');
+
+    Route::get('/rapor/check-status/{id}', [RaporController::class, 'checkStatus'])
+        ->middleware('role:admin,kepala_sekolah,guru,wali_kelas,guru_bk')
+        ->name('rapor.checkStatus');
+
+    Route::get('/rapor/get-siswa/{id}', [RaporController::class, 'getSiswaByKelas'])
+        ->middleware('role:admin,kepala_sekolah,guru,wali_kelas,guru_bk')
+        ->name('rapor.getSiswa');
+
+    Route::get('/rapor/cetak/{id}', [RaporController::class, 'cetak'])
+        ->middleware('role:admin,kepala_sekolah,guru,wali_kelas,guru_bk')
+        ->name('rapor.cetak');
+
+    Route::get('/rapor/cetak-legger/{id}', [RaporController::class, 'cetakLegger'])
+        ->middleware('role:admin,kepala_sekolah,guru,wali_kelas,guru_bk')
+        ->name('rapor.cetakLegger');
+
+    Route::get('/rapor/cetak-massal/{id}', [RaporController::class, 'cetakRaporMassal'])
+        ->middleware('role:admin,kepala_sekolah,guru,wali_kelas,guru_bk')
+        ->name('rapor.cetakMassal');
+
+    /*
+     * [SECURITY-FIX] Dulu tanpa role — siswa yang login pun bisa
+     * mengunggah ZIP foto. Admin punya route terpisah
+     * (admin.uploadFotoZip); daftar role ini sama dengan halaman
+     * /guru/pengaturan yang memakai tombol upload ini.
+     */
+    Route::post('/pengaturan/upload-foto-zip', [PengaturanController::class, 'uploadFotoZip'])
+        ->middleware('role:guru,wali_kelas,guru_bk,tendik,kepala_sekolah')
+        ->name('guru.uploadFotoZip');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Tata Usaha (tendik)
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware(['auth', 'verified', 'role:tendik'])
+    ->prefix('tu/surat')
+    ->name('tu.surat.')
+    ->group(function () {
+        Route::get('/', [SuratController::class, 'index'])->name('index');
+        Route::post('/cetak', [SuratController::class, 'cetak'])->name('cetak');
+        Route::get('/cetak/{id}', [SuratController::class, 'cetakPreview'])->whereNumber('id')->name('cetak.preview');
+        Route::post('/upload-kop', [SuratController::class, 'uploadKop'])->name('uploadKop');
+        Route::get('/riwayat', [SuratController::class, 'riwayat'])->name('riwayat');
+        Route::get('/riwayat/{id}/cetak', [SuratController::class, 'cetakPreview'])->whereNumber('id')->name('cetakUlang');
+        Route::delete('/riwayat/{id}', [SuratController::class, 'destroy'])->whereNumber('id')->name('destroy');
+        Route::post('/surat-masuk', [SuratController::class, 'storeMasuk'])->name('storeMasuk');
+        Route::delete('/surat-masuk/{id}', [SuratController::class, 'destroyMasuk'])->whereNumber('id')->name('destroyMasuk');
+    });
+
+Route::middleware(['auth', 'verified', 'role:tendik'])
+    ->prefix('tu/kartu-pelajar')
+    ->name('tu.kartu-pelajar.')
+    ->group(function () {
+        Route::get('/', [KartuPelajarController::class, 'index'])->name('index');
+        Route::post('/settings', [KartuPelajarController::class, 'saveSettings'])->name('settings');
+        Route::post('/upload-kop', [KartuPelajarController::class, 'uploadKop'])->name('uploadKop');
+        Route::post('/upload-tanda-tangan', [KartuPelajarController::class, 'uploadTandaTangan'])->name('uploadTandaTangan');
+    });
+
+
+// V21R62: Guru yang berhak mengajar dapat mengelola administrasi ujian sekolah.
+// Middleware 'pengajar' memeriksa canTeach() (bukan hanya users.role),
+// sedangkan tendik tetap memiliki akses seperti sebelumnya.
+Route::middleware(['auth', 'verified', 'role:tendik,pengajar'])
+    ->prefix('tu/ujian')
+    ->name('tu.ujian.')
+    ->group(function () {
+        Route::get('/', [ExamAdministrationController::class, 'index'])->name('index');
+        Route::post('/stationery', [ExamAdministrationController::class, 'uploadStationery'])->name('stationery.upload');
+
+        Route::post('/program', [ExamAdministrationController::class, 'storeProgram'])->name('program.store');
+        Route::patch('/program/{program}', [ExamAdministrationController::class, 'updateProgram'])->whereNumber('program')->name('program.update');
+        Route::delete('/program/{program}', [ExamAdministrationController::class, 'destroyProgram'])->whereNumber('program')->name('program.destroy');
+
+        Route::post('/program/{program}/rooms/sync', [ExamAdministrationController::class, 'syncRooms'])->whereNumber('program')->name('rooms.sync');
+        Route::post('/program/{program}/rooms/{room}/layout', [ExamAdministrationController::class, 'updateRoomLayout'])
+            ->whereNumber('program')
+            ->whereNumber('room')
+            ->name('rooms.layout');
+
+        Route::post('/program/{program}/schedules', [ExamAdministrationController::class, 'storeSchedule'])->whereNumber('program')->name('schedule.store');
+        Route::patch('/schedules/{schedule}', [ExamAdministrationController::class, 'updateSchedule'])->whereNumber('schedule')->name('schedule.update');
+        Route::delete('/schedules/{schedule}', [ExamAdministrationController::class, 'destroySchedule'])->whereNumber('schedule')->name('schedule.destroy');
+
+        Route::post('/program/{program}/participants/assign', [ExamAdministrationController::class, 'assignParticipants'])->whereNumber('program')->name('participants.assign');
+        Route::patch('/program/{program}/participants/{participant}/seat', [ExamAdministrationController::class, 'updateParticipantSeat'])
+            ->whereNumber('program')
+            ->whereNumber('participant')
+            ->name('participants.seat');
+        Route::delete('/program/{program}/participants/{participant}', [ExamAdministrationController::class, 'removeParticipant'])
+            ->whereNumber('program')
+            ->whereNumber('participant')
+            ->name('participants.remove');
+
+        Route::post('/program/{program}/invigilators', [ExamAdministrationController::class, 'saveInvigilators'])
+            ->whereNumber('program')
+            ->name('invigilators.save');
+
+        Route::get('/program/{program}/print/cards', [ExamAdministrationController::class, 'printCards'])->whereNumber('program')->name('print.cards');
+        Route::get('/program/{program}/print/seating', [ExamAdministrationController::class, 'printSeating'])->whereNumber('program')->name('print.seating');
+        Route::get('/program/{program}/print/attendance', [ExamAdministrationController::class, 'printAttendance'])->whereNumber('program')->name('print.attendance');
+        Route::get('/program/{program}/print/minutes', [ExamAdministrationController::class, 'printMinutes'])->whereNumber('program')->name('print.minutes');
+    });
+
+require __DIR__ . '/gtk-bundles.php';
+
+require __DIR__ . '/tu-profile.php';
+
+require __DIR__ . '/atp.php';
+
+require __DIR__ . '/auth.php';
+
+/* eduXid LJK-A4-V2 — route modul Pindai LJK */
+require __DIR__ . '/ljk.php';
+
+/*
+|--------------------------------------------------------------------------
+| Wali Kelas - Status Akhir Semester Genap
+|--------------------------------------------------------------------------
+*/
+Route::middleware([
+    'auth',
+    'verified',
+    'semester.selected',
+    'role:guru,wali_kelas,guru_bk',
+])->group(function () {
+    Route::get(
+        '/wali-kelas/status-akhir-data',
+        [\App\Http\Controllers\WaliKelasProgressionController::class, 'data']
+    )->name('guru.waliKelas.statusData');
+
+    Route::post(
+        '/wali-kelas/status-akhir',
+        [\App\Http\Controllers\WaliKelasProgressionController::class, 'store']
+    )->name('guru.waliKelas.statusStore');
+});
+
+/* [LJK-V13R11R1] Koreksi LJK-A4-V3 */
+require __DIR__ . '/ljk-v13r11.php';
+
+/* [LJK-AUTO-V14R1] */
+require __DIR__ . '/ljk_auto_v14r1.php';
+
+/* [LJK-UNIFIED-V14R6] */
+require __DIR__ . '/ljk_unified_v14r6.php';
+
+/* [ITEM-ANALYSIS-V1] */
+require __DIR__ . '/item_analysis_v1.php';

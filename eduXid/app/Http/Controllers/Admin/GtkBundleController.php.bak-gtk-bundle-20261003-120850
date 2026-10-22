@@ -1,0 +1,87 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers\Admin;
+
+use App\Http\Controllers\Controller;
+use App\Services\GtkBundle\Builder;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
+use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Throwable;
+
+class GtkBundleController extends Controller
+{
+    public function index(Builder $builder): View
+    {
+        $teachers = DB::table('teachers')
+            ->orderBy('nama')
+            ->get()
+            ->map(function ($teacher) use ($builder) {
+                $loginId = $builder->resolveLoginId($teacher);
+                $teacher->bundle_login_id = $loginId;
+                $teacher->bundle_ready = $loginId !== null && $builder->bundleExists((int) $teacher->id);
+                $teacher->bundle_meta = $loginId !== null
+                    ? $builder->readBundleMeta((int) $teacher->id)
+                    : null;
+
+                return $teacher;
+            });
+
+        $school = DB::table('schools')->first();
+
+        return view('admin.gtk-bundles', compact('teachers', 'school'));
+    }
+
+    public function build(Request $request, int $teacher, Builder $builder): RedirectResponse
+    {
+        try {
+            $result = $builder->build($teacher);
+
+            $message = 'Paket GTK berhasil dibuat untuk '
+                . ($result['teacher_name'] ?? 'GTK')
+                . '.';
+
+            if (($result['pairing_status'] ?? '') !== 'paired') {
+                $message .= ' Catatan: pairing PC belum ditemukan pada database Admin; '
+                    . 'paket tetap dibuat dan GTK perlu pairing saat pertama kali digunakan.';
+            }
+
+            return back()->with('success', $message);
+        } catch (Throwable $e) {
+            report($e);
+
+            return back()->with('error', 'Gagal membuat Paket GTK: ' . $e->getMessage());
+        }
+    }
+
+    public function download(int $teacher, Builder $builder): BinaryFileResponse|RedirectResponse
+    {
+        $path = $builder->bundlePath($teacher);
+
+        if (!is_file($path)) {
+            return back()->with('error', 'Paket GTK belum dibuat atau file paket sudah tidak tersedia.');
+        }
+
+        return response()->download($path, basename($path), [
+            'Content-Type' => 'application/zip',
+        ]);
+    }
+
+    public function destroy(int $teacher, Builder $builder): RedirectResponse
+    {
+        try {
+            $builder->deleteBundle($teacher);
+
+            return back()->with('success', 'Paket GTK berhasil dihapus.');
+        } catch (Throwable $e) {
+            report($e);
+
+            return back()->with('error', 'Gagal menghapus Paket GTK: ' . $e->getMessage());
+        }
+    }
+}

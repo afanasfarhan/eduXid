@@ -1,0 +1,546 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services\GtkBundle;
+
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
+use PDO;
+use RuntimeException;
+use Throwable;
+use ZipArchive;
+
+class Builder
+{
+    private string $bundleDir;
+    private string $workDir;
+
+    public function __construct()
+    {
+        $this->bundleDir = storage_path('app/gtk-bundles');
+        $this->workDir = $this->bundleDir . DIRECTORY_SEPARATOR . 'work';
+
+        File::ensureDirectoryExists($this->bundleDir);
+        File::ensureDirectoryExists($this->workDir);
+    }
+
+    public function resolveLoginId(object $teacher): ?string
+    {
+        foreach (['nip', 'nik', 'nuptk'] as $field) {
+            $value = trim((string) ($teacher->{$field} ?? ''));
+
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
+    public function bundleExists(int $teacherId): bool
+    {
+        return is_file($this->bundlePath($teacherId));
+    }
+
+    public function bundlePath(int $teacherId): string
+    {
+        return $this->bundleDir . DIRECTORY_SEPARATOR . 'gtk_' . $teacherId . '.zip';
+    }
+
+    public function metaPath(int $teacherId): string
+    {
+        return $this->bundleDir . DIRECTORY_SEPARATOR . 'gtk_' . $teacherId . '.json';
+    }
+
+    public function readBundleMeta(int $teacherId): ?array
+    {
+        $path = $this->metaPath($teacherId);
+
+        if (!is_file($path)) {
+            return null;
+        }
+
+        $data = json_decode((string) file_get_contents($path), true);
+
+        return is_array($data) ? $data : null;
+    }
+
+    public function deleteBundle(int $teacherId): void
+    {
+        foreach ([$this->bundlePath($teacherId), $this->metaPath($teacherId)] as $path) {
+            if (is_file($path) && !@unlink($path)) {
+                throw new RuntimeException('Tidak dapat menghapus: ' . $path);
+            }
+        }
+    }
+
+    public function build(int $teacherId): array
+    {
+        if (!class_exists(ZipArchive::class)) {
+            throw new RuntimeException('Extension PHP zip belum aktif.');
+        }
+
+        $teacher = DB::table('teachers')->where('id', $teacherId)->first();
+
+        if (!$teacher) {
+            throw new RuntimeException('Data GTK tidak ditemukan.');
+        }
+
+        $loginId = $this->resolveLoginId($teacher);
+
+        if (!$loginId) {
+            throw new RuntimeException('GTK belum memiliki NIP, NIK, atau NUPTK untuk identitas perangkat.');
+        }
+
+        $school = DB::table('schools')->first();
+
+        $npsn = trim((string) ($school->npsn ?? ''));
+
+        if ($npsn === '') {
+            throw new RuntimeException('NPSN sekolah belum tersedia.');
+        }
+
+        $user = DB::table('users')
+            ->whereIn('role', ['guru', 'wali_kelas', 'guru_bk', 'tendik', 'kepala_sekolah'])
+            ->where(function ($q) use ($loginId) {
+                $q->where('login_id', $loginId);
+            })
+            ->first();
+
+        if (!$user) {
+            throw new RuntimeException(
+                'Akun login GTK tidak ditemukan untuk identitas ' . $loginId
+                . '. Sinkronkan/buat akun GTK terlebih dahulu.'
+            );
+        }
+
+        $deviceId = $npsn . '-' . $loginId . '-PC';
+        $token = Str::random(12);
+        $jobRoot = $this->workDir . DIRECTORY_SEPARATOR . 'job-' . $teacherId . '-' . $token;
+        $stagingRoot = $jobRoot . DIRECTORY_SEPARATOR . 'eduXidMaster';
+
+        File::ensureDirectoryExists($stagingRoot);
+
+        $sourceRoot = dirname(base_path());
+
+        try {
+            $this->copyDistribution($sourceRoot, $stagingRoot);
+            $this->prepareEnvironment($stagingRoot, $npsn, $loginId, $deviceId);
+            $pairingStatus = $this->sanitizeDatabase($stagingRoot, (int) $user->id, $loginId, $deviceId);
+            $this->writeBundleMetadata(
+                $stagingRoot,
+                $teacher,
+                $user,
+                $school,
+                $loginId,
+                $deviceId,
+                $pairingStatus
+            );
+
+            $master = app(\App\Services\MasterSnapshotService::class)->build($loginId);
+            $masterPath = $stagingRoot . DIRECTORY_SEPARATOR . 'eduXid'
+                . DIRECTORY_SEPARATOR . 'storage'
+                . DIRECTORY_SEPARATOR . 'app'
+                . DIRECTORY_SEPARATOR . 'gtk-bundle'
+                . DIRECTORY_SEPARATOR . 'data-pokok.json';
+
+            File::ensureDirectoryExists(dirname($masterPath));
+            File::put(
+                $masterPath,
+                json_encode($master, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+            );
+
+            $target = $this->bundlePath($teacherId);
+            $tempTarget = $target . '.part';
+
+            @unlink($tempTarget);
+            @unlink($target);
+
+            $this->zipDirectory($stagingRoot, $tempTarget);
+
+            if (!@rename($tempTarget, $target)) {
+                throw new RuntimeException('Gagal memindahkan ZIP hasil build ke folder paket.');
+            }
+
+            $meta = [
+                'schema' => 'EDUXID-GTK-BUNDLE-V1',
+                'teacher_id' => $teacherId,
+                'teacher_name' => trim((string) ($teacher->nama ?? $user->name ?? 'GTK')),
+                'login_id' => $loginId,
+                'school_id' => $npsn,
+                'device_id' => $deviceId,
+                'pairing_status' => $pairingStatus,
+                'created_at' => now()->toIso8601String(),
+                'filename' => basename($target),
+                'size' => filesize($target) ?: 0,
+            ];
+
+            File::put(
+                $this->metaPath($teacherId),
+                json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+            );
+
+            return $meta;
+        } finally {
+            try {
+                if (is_dir($jobRoot)) {
+                    File::deleteDirectory($jobRoot);
+                }
+            } catch (Throwable) {
+            }
+        }
+    }
+
+    private function copyDistribution(string $sourceRoot, string $targetRoot): void
+    {
+        $sourceRoot = rtrim($sourceRoot, '\\/');
+
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator(
+                $sourceRoot,
+                \FilesystemIterator::SKIP_DOTS
+            ),
+            \RecursiveIteratorIterator::SELF_FIRST
+        );
+
+        foreach ($iterator as $item) {
+            $source = $item->getPathname();
+            $relative = ltrim(substr($source, strlen($sourceRoot)), '\\/');
+            $relativeNormalized = str_replace('\\', '/', $relative);
+
+            if ($this->shouldExclude($relativeNormalized, $item->isDir())) {
+                continue;
+            }
+
+            $destination = $targetRoot . DIRECTORY_SEPARATOR
+                . str_replace('/', DIRECTORY_SEPARATOR, $relativeNormalized);
+
+            if ($item->isDir()) {
+                File::ensureDirectoryExists($destination);
+                continue;
+            }
+
+            File::ensureDirectoryExists(dirname($destination));
+
+            if (!@copy($source, $destination)) {
+                throw new RuntimeException('Gagal menyalin file distribusi: ' . $relativeNormalized);
+            }
+        }
+    }
+
+    private function shouldExclude(string $relative, bool $isDir): bool
+    {
+        $path = '/' . trim(strtolower($relative), '/') . ($isDir ? '/' : '');
+
+        $blockedPrefixes = [
+            '/.git/',
+            '/node_modules/',
+            '/.eduxid-updater/',
+            '/eduxid/storage/app/gtk-bundles/',
+            '/eduxid/storage/app/releases/',
+            '/eduxid/storage/app/patches/',
+            '/eduxid/storage/logs/',
+            '/eduxid/storage/framework/cache/',
+            '/eduxid/storage/framework/sessions/',
+            '/eduxid/storage/framework/views/',
+            '/eduxid/storage/framework/testing/',
+            '/eduxid/storage/app/backups/',
+        ];
+
+        foreach ($blockedPrefixes as $prefix) {
+            if (str_starts_with($path, $prefix)) {
+                return true;
+            }
+        }
+
+        $name = strtolower(basename($relative));
+
+        if (preg_match('/^eduxid-patch-.*\.zip$/i', $name)) {
+            return true;
+        }
+
+        if (preg_match('/^gtk_\d+\.(zip|json|part)$/i', $name)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function prepareEnvironment(
+        string $stagingRoot,
+        string $npsn,
+        string $loginId,
+        string $deviceId
+    ): void {
+        $envPath = $stagingRoot . DIRECTORY_SEPARATOR . 'eduXid' . DIRECTORY_SEPARATOR . '.env';
+
+        $env = is_file($envPath)
+            ? (string) file_get_contents($envPath)
+            : '';
+
+        $newKey = 'base64:' . base64_encode(random_bytes(32));
+
+        $values = [
+            'APP_KEY' => $newKey,
+            'EDUXID_EDITION' => 'teacher',
+            'EDUXID_SCHOOL_ID' => $npsn,
+            'EDUXID_NPSN' => $npsn,
+            'EDUXID_DEVICE_ID' => $deviceId,
+            'EDUXID_ADMIN_KEY' => '',
+            'EDUXID_ADMIN_TOKEN' => '',
+            'EDUXID_ENROLLMENT_TOKEN' => '',
+        ];
+
+        foreach ($values as $key => $value) {
+            $env = $this->setEnvValue($env, $key, $value);
+        }
+
+        $env = $this->setEnvValue($env, 'APP_ENV', 'production');
+        $env = $this->setEnvValue($env, 'APP_DEBUG', 'false');
+
+        File::put($envPath, rtrim($env) . PHP_EOL);
+    }
+
+    private function setEnvValue(string $env, string $key, string $value): string
+    {
+        $line = $key . '=' . $value;
+
+        if (preg_match('/^' . preg_quote($key, '/') . '=.*$/m', $env)) {
+            return preg_replace(
+                '/^' . preg_quote($key, '/') . '=.*$/m',
+                str_replace('$', '\$', $line),
+                $env
+            ) ?? $env;
+        }
+
+        return rtrim($env) . PHP_EOL . $line . PHP_EOL;
+    }
+
+    private function sanitizeDatabase(
+        string $stagingRoot,
+        int $ownerUserId,
+        string $loginId,
+        string $deviceId
+    ): string {
+        $dbPath = $stagingRoot . DIRECTORY_SEPARATOR . 'eduXid'
+            . DIRECTORY_SEPARATOR . 'database'
+            . DIRECTORY_SEPARATOR . 'database.sqlite';
+
+        if (!is_file($dbPath)) {
+            throw new RuntimeException('database.sqlite tidak ditemukan pada distribusi.');
+        }
+
+        $pdo = new PDO('sqlite:' . $dbPath);
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $pdo->exec('PRAGMA foreign_keys = OFF');
+
+        try {
+            if ($this->tableExists($pdo, 'sessions')) {
+                $pdo->exec('DELETE FROM sessions');
+            }
+
+            if ($this->tableExists($pdo, 'cache')) {
+                $pdo->exec('DELETE FROM cache');
+            }
+
+            if ($this->tableExists($pdo, 'jobs')) {
+                $pdo->exec('DELETE FROM jobs');
+            }
+
+            if ($this->tableExists($pdo, 'failed_jobs')) {
+                $pdo->exec('DELETE FROM failed_jobs');
+            }
+
+            if ($this->tableExists($pdo, 'users')) {
+                $stmt = $pdo->prepare(
+                    "DELETE FROM users
+                     WHERE id <> :owner
+                       AND LOWER(COALESCE(role, '')) <> 'siswa'"
+                );
+                $stmt->execute(['owner' => $ownerUserId]);
+            }
+
+            $pairingStatus = 'needs_pairing';
+
+            if ($this->tableExists($pdo, 'sync_devices')) {
+                $columns = $this->columns($pdo, 'sync_devices');
+
+                if (in_array('device_id', $columns, true)) {
+                    $select = $pdo->prepare(
+                        'SELECT * FROM sync_devices WHERE device_id = :device LIMIT 1'
+                    );
+                    $select->execute(['device' => $deviceId]);
+                    $device = $select->fetch(PDO::FETCH_ASSOC) ?: null;
+
+                    $delete = $pdo->prepare(
+                        'DELETE FROM sync_devices WHERE device_id <> :device'
+                    );
+                    $delete->execute(['device' => $deviceId]);
+
+                    if ($device) {
+                        $token = trim((string) ($device['sync_token'] ?? ''));
+                        $pairingStatus = $token !== '' ? 'paired' : 'needs_pairing';
+                    } else {
+                        $pdo->exec('DELETE FROM sync_devices');
+                    }
+                } else {
+                    $pdo->exec('DELETE FROM sync_devices');
+                }
+            }
+
+            if ($this->tableExists($pdo, 'eduxid_settings')) {
+                $columns = $this->columns($pdo, 'eduxid_settings');
+
+                $keyColumn = in_array('key', $columns, true)
+                    ? 'key'
+                    : (in_array('setting_key', $columns, true) ? 'setting_key' : null);
+
+                if ($keyColumn) {
+                    $pdo->exec(
+                        "DELETE FROM eduxid_settings
+                         WHERE {$keyColumn} LIKE 'master::applied%'
+                            OR {$keyColumn} LIKE 'wpa::%'
+                            OR {$keyColumn} = 'master::push_dirty'
+                            OR {$keyColumn} = 'daemon::heartbeat'"
+                    );
+                }
+            }
+
+            $pdo->exec('VACUUM');
+
+            return $pairingStatus;
+        } finally {
+            $pdo->exec('PRAGMA foreign_keys = ON');
+        }
+    }
+
+    private function tableExists(PDO $pdo, string $table): bool
+    {
+        $stmt = $pdo->prepare(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=:name"
+        );
+        $stmt->execute(['name' => $table]);
+
+        return (int) $stmt->fetchColumn() > 0;
+    }
+
+    private function columns(PDO $pdo, string $table): array
+    {
+        $rows = $pdo->query('PRAGMA table_info("' . str_replace('"', '""', $table) . '")')
+            ->fetchAll(PDO::FETCH_ASSOC);
+
+        return array_values(array_filter(array_map(
+            static fn (array $row) => isset($row['name']) ? (string) $row['name'] : null,
+            $rows
+        )));
+    }
+
+    private function writeBundleMetadata(
+        string $stagingRoot,
+        object $teacher,
+        object $user,
+        object $school,
+        string $loginId,
+        string $deviceId,
+        string $pairingStatus
+    ): void {
+        $meta = [
+            'schema' => 'EDUXID-GTK-BUNDLE-V1',
+            'school' => [
+                'npsn' => (string) ($school->npsn ?? ''),
+                'name' => (string) ($school->nama ?? $school->nama_sekolah ?? ''),
+            ],
+            'gtk' => [
+                'teacher_id' => (int) $teacher->id,
+                'user_id' => (int) $user->id,
+                'name' => (string) ($teacher->nama ?? $user->name ?? ''),
+                'login_id' => $loginId,
+                'device_id' => $deviceId,
+            ],
+            'edition' => 'teacher',
+            'pairing_status' => $pairingStatus,
+            'created_at' => now()->toIso8601String(),
+        ];
+
+        File::put(
+            $stagingRoot . DIRECTORY_SEPARATOR . 'gtk-bundle.json',
+            json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+        );
+
+        $readme = <<<TXT
+eduXid - Paket GTK Siap Pakai
+
+Pemilik Paket : {$meta['gtk']['name']}
+Login ID      : {$loginId}
+Device ID     : {$deviceId}
+Sekolah/NPSN  : {$meta['school']['name']} / {$meta['school']['npsn']}
+Edition       : teacher
+Pairing       : {$pairingStatus}
+
+Paket ini khusus untuk GTK di atas.
+Jangan dibagikan kepada GTK lain.
+
+Cara menggunakan:
+1. Ekstrak folder eduXidMaster ke laptop GTK.
+2. Jalankan eduXid.exe atau eduXid-Launcher.bat.
+3. Login menggunakan akun GTK pemilik paket.
+4. Jika status Pairing = needs_pairing, lakukan pairing sekali dari Dashboard menggunakan Kode Guru dari Admin.
+5. Setelah pairing, tarik/sinkronkan data seperti biasa.
+
+Paket dibuat otomatis oleh eduXid Admin.
+TXT;
+
+        File::put(
+            $stagingRoot . DIRECTORY_SEPARATOR . 'BACA-SAYA-PAKET-GTK.txt',
+            $readme
+        );
+    }
+
+    private function zipDirectory(string $sourceDir, string $targetZip): void
+    {
+        $zip = new ZipArchive();
+
+        if ($zip->open($targetZip, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+            throw new RuntimeException('Tidak dapat membuat ZIP Paket GTK.');
+        }
+
+        try {
+            $iterator = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator(
+                    $sourceDir,
+                    \FilesystemIterator::SKIP_DOTS
+                ),
+                \RecursiveIteratorIterator::SELF_FIRST
+            );
+
+            foreach ($iterator as $item) {
+                $path = $item->getPathname();
+                $relative = str_replace(
+                    '\\',
+                    '/',
+                    ltrim(substr($path, strlen($sourceDir)), '\\/')
+                );
+
+                if ($relative === '') {
+                    continue;
+                }
+
+                if ($item->isDir()) {
+                    $zip->addEmptyDir($relative);
+                } else {
+                    if (!$zip->addFile($path, $relative)) {
+                        throw new RuntimeException('Gagal memasukkan file ke ZIP: ' . $relative);
+                    }
+                }
+            }
+        } finally {
+            $zip->close();
+        }
+
+        if (!is_file($targetZip) || filesize($targetZip) === 0) {
+            throw new RuntimeException('ZIP Paket GTK gagal dibuat atau kosong.');
+        }
+    }
+}

@@ -1,0 +1,484 @@
+PETUNJUK PENGGUNAAN eduXid v.1.0.0
+UNTUK ADMIN SEKOLAH BARU
+============================================================
+
+Pengembang: Anas Farhan
+email: af.anasfarhan@gmail.com
+
+Panduan ini ditujukan untuk Admin sekolah yang baru pertama kali menggunakan eduXid.
+
+============================================================
+1. SEBELUM MENJALANKAN eduXid
+============================================================
+
+Langkah Awal:
+- Pastikan Anda memiliki eduXid-DISTRIBUSI-.zip.
+- Ekstrak eduXid-DISTRIBUSI-.zip di drive manapun yang Anda inginkan (klik kanan --> extract).
+- Dalam folder eduXid-DISTRIBUSI-, terdapat folder eduXid, system, dan php, serta file: eduXid.exe dan PETUNJUK PENGGUNAAN.txt. eduXidAutoUpdate.exe dan eduXidUpdater.exe berada di subfolder system. File BAT/CMD dan helper auto-update tetap disertakan untuk pemasangan otomatis tanpa PowerShell.
+- Jangan mengubah file apapun termasuk .env, database, APP_KEY, token sinkronisasi, atau file sistem eduXid secara manual kecuali untuk perbaikan teknis yang memang diarahkan.
+
+============================================================
+2. LOGIN PERTAMA
+============================================================
+
+1. Jalankan eduXid.exe.muncul jendela eduXid Sync Engine dan eduXid Sync Daemon, biarkan saja dua jendela ini, jangan ditutup selama Anda bekerja menggunakan eduXid.
+2. Muncul halaman login pada browser.
+3. Masuk menggunakan akun Admin.
+
+   username : admin
+   password : admin123
+   (Password bisa diganti pada menu profil admin)
+
+4. Setelah login, buka halaman Dasbor.
+
+Pada penggunaan pertama, eduXid dapat berada dalam MODE SETUP karena data sekolah belum tersedia.
+
+============================================================
+3. SINKRON VIA API DAPODIK (DISARANKAN)
+============================================================
+
+Untuk setup awal menggunakan DAPODIK, pastikan eduXid dijalankan di laptop yang sudah terinstal aplikasi DAPODIK. Masukkan data:
+
+1. NPSN sekolah
+2. Kode Token yang diperoleh dari menu Pengaturan Dapodik -> Web Service -> Tambah aplikasi eduXid -> copy/catat kode Token yang muncul.
+3. Tekan tombol sinkron sekarang.
+
+============================================================
+4. IMPOR MANUAL DATA EXCEL
+============================================================
+
+Jika sekolah tidak menggunakan Dapodik, Anda dapat melakukan impor Excel menggunakan template resmi eduXid yang sudah disediakan.
+
+Urutan impor:
+
+1. Sekolah
+2. GTK
+3. Kelas
+4. Murid
+5. Mata Pelajaran
+6. Pembelajaran
+
+Sebelum impor:
+- Jangan mengubah nama kolom template.
+- Jangan menghapus kolom wajib.
+- Pastikan NISN siswa benar.
+- Pastikan NIP/NIK/NUPTK GTK benar.
+- Pastikan nama kelas konsisten.
+- Pastikan mata pelajaran sudah tersedia sebelum mengimpor pembelajaran.
+
+Setelah setiap impor, periksa hasilnya sebelum lanjut ke tahap berikutnya.
+
+============================================================
+5. MEMERIKSA DATA GTK
+============================================================
+
+Buka menu GTK.
+
+Periksa:
+- Nama GTK
+- NIP
+- NIK
+- NUPTK jika ada
+- Jabatan
+- Status GTK
+- Identitas yang digunakan untuk login
+- Anda bisa menambahkan data GTK baru di sini.
+
+NIP/NIK/NUPTK digunakan untuk mengenali GTK pada eduXid.
+
+============================================================
+6. MEMERIKSA DATA MURID
+============================================================
+
+Buka menu Murid.
+
+Periksa:
+- Nama murid
+- NISN
+- Jenis kelamin
+- Kelas/Rombel
+- Data peserta didik lainnya
+- Anda bisa menambahkan data murid baru di sini
+
+NISN digunakan sebagai identitas penting siswa pada:
+- PWA Siswa
+- Ujian
+- Nomor peserta ujian
+- LJK
+- Sinkronisasi perangkat siswa
+
+============================================================
+7. MEMERIKSA KELAS / ROMBEL
+============================================================
+
+Buka menu Kelas.
+
+Pastikan:
+- Semua rombel reguler sudah tersedia.
+- Tingkat kelas benar.
+- Wali kelas terhubung jika tersedia.
+- Jumlah siswa per rombel sesuai.
+
+Data kelas digunakan pada:
+- Pembelajaran
+- LMS
+- Buku Nilai
+- Rapor
+- Administrasi Ujian
+- Kapasitas ruang ujian
+
+============================================================
+8. MEMERIKSA MATA PELAJARAN
+============================================================
+
+Pastikan semua mata pelajaran sekolah sudah tersedia dan tidak ada nama mapel yang terduplikasi karena perbedaan penulisan.
+
+============================================================
+9. MEMERIKSA PENUGASAN MENGAJAR
+============================================================
+
+Buka menu Pembelajaran.
+
+Hubungkan:
+GTK + Mata Pelajaran + Kelas/Rombel
+
+Penugasan Mengajar menentukan guru yang berhak mengakses:
+- ATP
+- LMS
+- Bank Soal
+- Paket Ujian
+- Buku Nilai
+- Nilai Akhir
+
+Pastikan tidak ada salah guru, salah mapel, atau salah kelas.
+
+============================================================
+10. TUGAS TAMBAHAN GTK
+============================================================
+
+Pastikan tugas tambahan GTK juga tercatat dengan benar.
+
+Contoh:
+- Wali Kelas
+- Pembina Ekstrakurikuler
+- Guru BK
+- Koordinator Kokurikuler
+
+Jika Tendik memiliki tugas tambahan, eduXid dapat menampilkan menu Penugasan sesuai tugas yang dimilikinya.
+
+Contoh:
+
+Penugasan
+  └─ Ekstrakurikuler
+
+Tugas tambahan tidak mengubah role utama akun.
+
+============================================================
+11. MENYIAPKAN eduXid CLOUD
+============================================================
+
+Buka panel eduXid Cloud dari Admin/Dasbor.
+
+Cloud digunakan sebagai jalur sinkronisasi antarperangkat.
+
+Cloud bukan database utama sekolah.
+
+Data utama tetap berada pada instalasi eduXid masing-masing.
+
+Pastikan koneksi Cloud normal sebelum pairing perangkat.
+
+Hubungi pengembang eduXid untuk mendapatkan kode Cloud Setup sekolah Anda.
+
+============================================================
+12. MENGIRIM AKUN KE CLOUD
+============================================================
+
+Admin dapat mengirim direktori akun yang diperlukan ke Cloud, antara lain:
+- Akun Guru
+- Akun Siswa
+
+Pastikan NPSN sekolah sudah benar sebelum pengiriman.
+
+============================================================
+13. MEMBUAT KODE PAIRING GURU
+============================================================
+
+Guru membutuhkan Enrollment Code/Token untuk pairing perangkat.
+
+Identitas perangkat guru:
+Laptop Guru:
+NPSN-NIP/NIK-PC
+
+PWA Guru:
+NPSN-NIP/NIK-HP
+
+Berikan kode pairing hanya kepada guru yang bersangkutan.
+
+============================================================
+14. MEMBUAT PAKET GTK (DISARANKAN)
+============================================================
+
+Admin dapat membuat Paket GTK Siap Pakai untuk laptop guru.
+
+Setiap Paket GTK hanya untuk satu GTK.
+
+Paket tidak membawa seluruh database Admin dan tidak boleh digunakan untuk GTK lain.
+
+Setelah mendapatkan paket, GTK dapat mengekstrak file zip eduXid-GTK-NPSN-NIP/NIK-PC.zip, kemudian menjalankan
+eduXid.exe. Setelah itu akan muncul layer login:
+
+============================================================
+15. DISTRIBUSI PAKET GTK
+============================================================
+
+1. Download Paket GTK.
+2. Salin ke laptop GTK yang sesuai.
+3. Ekstrak.
+4. Jalankan eduXid.exe.
+   Muncul layer login, isi:
+
+   username : NIP/NIK 
+   password : NPSN sekolah
+   (Password bisa diganti pada menu profil GTK)
+
+5. Pairing bila diminta.
+6. Tarik Data Pokok (dari menu Pengaturan).
+7. Periksa penugasan mengajar.
+
+Jika guru berganti laptop, gunakan prosedur perangkat/pairing yang benar.
+
+=================================================================================
+16. BAGIKAN DATA POKOK KE GTK (KONDISI OFFLINE/TIDAK TERHUBUNG JARINGAN/INTERNET)
+=================================================================================
+
+Anda dapat membagikan data pokok yang berisi data murid, kelas/rombel, penugasan, dll. untuk diupload pada eduXid Guru.
+
+Setelah mendapatkan paket eduXidMaster.zip, ekstrak kemudian jalankan eduXid.exe.
+
+Login GTK (pertama kali/instalasi awal jika tidak mendapatkan Paket GTK dari admin sekolah):
+
+   Guru
+   username : guru
+   password : guru123
+
+   Tendik
+   username : tendik
+   password : tendik123
+
+============================================================
+17. MENU/FITUR GTK
+============================================================
+
+Setelah penugasan tersedia, guru dapat membuka ATP.
+
+ATP disusun berdasarkan:
+Mata Pelajaran + Tingkat Kelas
+
+Isian ATP:
+- Urutan
+- Materi
+- Tujuan Pembelajaran
+- Indikator Penilaian
+
+Guru dapat:
+- Input manual
+- Edit
+- Hapus
+- Upload Excel
+- Download ATP Excel
+
+ATP digunakan oleh:
+- LMS
+- Bank Soal
+- Paket Ujian
+- Buku Nilai
+- Nilai Akhir
+- Deskripsi Capaian Kompetensi
+
+============================================================
+18. ADMINISTRASI UJIAN
+============================================================
+
+Pada akun Tendik, Administrasi Ujian berada di menu Ujian.
+
+Fitur:
+- Jadwal ujian
+- Ruang ujian
+- Peserta ujian
+- Kartu peserta
+- Daftar hadir
+- Berita acara
+- Denah tempat duduk
+
+Nomor peserta menggunakan NISN.
+
+Peserta dapat ditempatkan manual ke ruang ujian sesuai kapasitas.
+
+============================================================
+19. ADMINISTRASI SEKOLAH
+============================================================
+
+Pada akun Tendik tersedia menu Administrasi Sekolah.
+
+Isinya antara lain:
+- Profil
+- Buat Surat
+- Arsip Surat
+- Kartu Pelajar
+
+Halaman Profil menampilkan statistik dan informasi sekolah serta data yang dapat diunduh dalam format Excel.
+
+============================================================
+20. KOP DAN FORMAT CETAK
+============================================================
+
+Sebelum mencetak dokumen resmi, periksa pengaturan kop sekolah.
+
+Kop digunakan pada:
+- Surat
+- Kartu Pelajar
+- Rapor
+- Administrasi Ujian
+- LJK
+
+Pastikan logo, nama sekolah, alamat, kepala sekolah, dan data penandatangan benar.
+
+============================================================
+21. CHECKLIST SETELAH SETUP
+============================================================
+
+[ ] Data sekolah benar
+[ ] NPSN benar
+[ ] Data GTK lengkap
+[ ] Data murid lengkap
+[ ] NISN murid benar
+[ ] Kelas/rombel benar
+[ ] Mata pelajaran benar
+[ ] Penugasan guru benar
+[ ] Wali kelas benar
+[ ] Pembina ekstrakurikuler benar
+[ ] Guru BK benar
+[ ] Koordinator kokurikuler benar
+[ ] Cloud dapat dihubungi
+[ ] Akun guru sudah dikirim
+[ ] Akun siswa sudah dikirim
+[ ] Paket GTK dapat dibuat
+[ ] Guru dapat pairing
+[ ] Guru dapat menarik Data Pokok
+
+============================================================
+22. BACKUP
+============================================================
+
+Lakukan backup terutama sebelum:
+- Update eduXid
+- Import data dalam jumlah besar
+- Migrasi komputer
+- Perubahan struktur data
+- Perbaikan teknis besar
+
+Jangan hanya memiliki satu salinan database.
+
+============================================================
+23. UPDATE eduXid
+============================================================
+
+eduXid menggunakan sistem updater terpusat. system\eduXidAutoUpdate.exe adalah komponen Auto-Update Windows, sedangkan system\eduXidUpdater.exe untuk patch manual. eduXid.exe tetap di root. Pendaftaran pembaruan dilakukan otomatis saat launcher eduXid berjalan; pemeriksaan Cloud setiap 24 jam, pemasangan otomatis saat aman, tanpa PowerShell. Bila komponen EXE belum tersedia dari hasil kompilasi resmi, paket distribusi tidak boleh diterbitkan.
+
+Update dapat mencakup:
+- core
+- school
+- teacher
+
+Pastikan sinkronisasi selesai sebelum memasang update.
+
+Jika ada ujian aktif, jangan memaksa restart atau instal update.
+
+============================================================
+24. JIKA TERJADI MASALAH
+============================================================
+
+1. Catat menu/halaman yang dibuka.
+2. Catat pesan error lengkap.
+3. Jika Error 500, simpan screenshot atau salin pesan error.
+4. Jangan menghapus database.
+5. Jangan menghapus folder storage.
+6. Jangan membuat APP_KEY baru pada instalasi lama.
+7. Jangan mengganti token Cloud secara acak.
+8. Hubungi pengembang/dukungan dengan detail masalah.
+
+APP_KEY instalasi lama harus dipertahankan.
+
+============================================================
+25. RINGKASAN ALUR SETUP
+============================================================
+
+LOGIN ADMIN
+    ↓
+ISI IDENTITAS SEKOLAH
+    ↓
+INPUT / IMPOR GTK
+    ↓
+INPUT / IMPOR KELAS
+    ↓
+INPUT / IMPOR SISWA
+    ↓
+INPUT / IMPOR MATA PELAJARAN
+    ↓
+INPUT / IMPOR PEMBELAJARAN
+    ↓
+PERIKSA TUGAS TAMBAHAN
+    ↓
+SETUP eduXid CLOUD
+    ↓
+KIRIM AKUN GURU & SISWA
+    ↓
+BUAT KODE PAIRING GURU
+    ↓
+BUAT PAKET GTK
+    ↓
+DISTRIBUSIKAN KE GURU
+    ↓
+GURU PAIRING & TARIK DATA POKOK
+    ↓
+eduXid SIAP DIGUNAKAN
+
+============================================================
+26. PRINSIP PENTING
+============================================================
+
+- NPSN = identitas sekolah.
+- NISN = identitas utama siswa.
+- NIP/NIK = identitas perangkat guru/tendik.
+- Jangan berbagi Paket GTK antar guru.
+- Jangan membagikan token atau kunci sistem.
+- Jangan mengubah database secara manual.
+- Lakukan backup rutin.
+- Pastikan Data Pokok benar sebelum mulai penilaian.
+- Perbaiki kesalahan data dari sumbernya.
+
+============================================================
+eduXid untuk Indonesia
+(c) 2026. Anas Farhan.
+============================================================
+
+
+PENGGUNAAN TIGA EXECUTABLE (DISTRIBUSI 2026-10-09)
+=================================================
+Hanya eduXid.exe berada pada root (jalankan aplikasi).
+Dua executable lainnya berada di system: system\eduXidUpdater.exe
+(pembaruan manual) dan system\eduXidAutoUpdate.exe
+(pendaftaran pembaruan otomatis).
+
+Cukup buka eduXid.exe. Launcher yang dikompilasi dari source baru
+menjalankan system\eduXidAutoUpdate.exe otomatis. Untuk eduXid.exe lama,
+Laravel menyediakan jalur cadangan pendaftaran saat aplikasi dibuka.
+Task Scheduler bangun setiap 15 menit; cek Cloud hanya saat jatuh tempo
+24 jam. Instalasi patch otomatis hanya dilakukan saat kondisi aman.
+
+Helper CMD/PHP utama ditempatkan di system\, sementara helper internal
+berada dalam system\update. Jangan menghapus kedua folder tersebut.
+Setelah memindahkan executable, kompilasi ulang EXE dari BAT terbaru.
+Executable lama yang masih mengarah ke helper root harus diganti.
+Tidak menggunakan PowerShell. Pada komputer Windows pembatasan izin
+Task Scheduler dapat menunda registrasi; lihat .eduxid-updater\task-bootstrap.log.

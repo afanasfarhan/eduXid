@@ -1,0 +1,38 @@
+{
+  "resources/css/app.css": {
+    "file": "assets/app-CtAcnwjW.css",
+    "name": "app",
+    "names": [
+      "app.css"
+    ],
+    "src": "resources/css/app.css",
+    "isEntry": true
+  },
+  "resources/js/app.js": {
+    "file": "assets/app-CpYwojkm.js",
+    "name": "app",
+    "src": "resources/js/app.js",
+    "isEntry": true,
+    "dynamicImports": [
+      "resources/js/lms-material-editor.js"
+    ]
+  },
+  "resources/js/lms-guru.js": {
+    "file": "assets/lms-guru-nRzcYuZw.js",
+    "name": "lms-guru",
+    "src": "resources/js/lms-guru.js",
+    "isEntry": true
+  },
+  "resources/js/lms-material-editor.js": {
+    "file": "assets/lms-material-editor-UX0aPsC_.js",
+    "name": "lms-material-editor",
+    "src": "resources/js/lms-material-editor.js",
+    "isDynamicEntry": true
+  },
+  "resources/js/lms-siswa.js": {
+    "file": "assets/lms-siswa-DjuUtwbq.js",
+    "name": "lms-siswa",
+    "src": "resources/js/lms-siswa.js",
+    "isEntry": true
+  }
+}
