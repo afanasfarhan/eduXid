@@ -62,6 +62,40 @@
                 </div>
             @endif
 
+            <div class="bg-white border border-indigo-100 shadow-sm rounded-xl p-5 mb-5">
+                <div class="flex items-center justify-between gap-3 flex-wrap mb-3">
+                    <div><h3 class="text-base font-bold text-gray-800">Impor Soal Word · AI Lokal</h3>
+                    <p class="text-xs text-gray-500 mt-1">DOCX format bebas → pratinjau soal → guru isi kunci → simpan. Tabel, grafik, dan penomoran otomatis Word didukung.</p></div>
+                    <span class="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-semibold">Offline-first di laptop</span>
+                </div>
+                <form action="{{ route('guru.bankSoal.import') }}" method="POST" enctype="multipart/form-data" class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                    @csrf
+                    <input type="hidden" name="word_mode" value="preview">
+                    <label class="block text-xs font-semibold text-gray-700">Dokumen Word
+                        <input type="file" name="word_file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required class="mt-1 block w-full text-sm rounded-md border border-gray-300 p-2">
+                    </label>
+                    <label class="block text-xs font-semibold text-gray-700">Mata Pelajaran
+                        <select name="subject_id" required class="mt-1 block w-full text-sm rounded-md border-gray-300">
+                            <option value="">— Pilih —</option>
+                            @foreach($wordSubjectNames as $id => $name)
+                                <option value="{{ $id }}">{{ $name }}</option>
+                            @endforeach
+                        </select>
+                    </label>
+                    <label class="block text-xs font-semibold text-gray-700">Tingkat Kelas
+                        <select name="tingkat_kelas" required class="mt-1 block w-full text-sm rounded-md border-gray-300">
+                            <option value="">— Pilih —</option>
+                            @foreach($tingkatDiajar as $grade)<option value="{{ $grade }}">{{ $grade }}</option>@endforeach
+                        </select>
+                    </label>
+                    <div class="flex flex-col gap-2">
+                        <label class="inline-flex items-center gap-2 text-xs text-gray-600"><input type="checkbox" name="ai_mode" value="on" checked> Analisis AI Lokal Qwen (jika tersedia)</label>
+                        <button type="submit" class="rounded-md bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 text-sm font-semibold">Pratinjau Impor Word</button>
+                    </div>
+                </form>
+                <p class="text-xs text-amber-700 mt-3">AI tidak mengarang kunci. Format yang gagal dikenali akan diberi peringatan; belum ada data tersimpan sebelum Anda menekan Simpan Soal Terpilih.</p>
+            </div>
+
             <div class="bg-white shadow-sm sm:rounded-lg p-4 mb-5">
                 <form method="GET" action="{{ route('guru.bankSoal') }}" class="flex flex-col sm:flex-row items-stretch sm:items-end gap-3">
                     <div class="w-full sm:w-56">
@@ -157,7 +191,7 @@
                                         </div>
                                     @endif
                                     <div class="prose prose-sm max-w-none bank-question-content">
-                                        {!! $soal->pertanyaan !!}
+                                        {!! \App\Support\QuestionHtmlSanitizer::clean($soal->pertanyaan) !!}
                                     </div>
                                     @if(!empty($soal->gambar_soal))
                                         <img src="{{ $soal->gambar_soal }}" alt="Gambar pendukung soal"

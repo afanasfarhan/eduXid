@@ -1,0 +1,23 @@
+/* eduXid V21R181 equation UI: keeps existing KaTeX rendering and manual LaTeX. */
+.edmath-inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:5px 0 11px}
+.edmath-inline button,.edmath-action{padding:6px 10px;border-radius:9px;border:1px solid #bfd4eb;background:#eff6ff;color:#144c89;font:600 12px Arial,sans-serif;cursor:pointer}
+.edmath-inline button:hover,.edmath-action:hover{background:#dbeafe}
+.edmath-hint{font:12px Arial,sans-serif;color:#607389}
+.edmath-preview{margin:6px 0; padding:8px 10px;border:1px dashed #cbd5e1;background:#f8fafc;border-radius:8px;min-height:35px;overflow-x:auto;font:13px Arial,sans-serif}
+.edmath-backdrop{position:fixed;z-index:2147483000;inset:0;background:rgba(8,27,50,.68);display:flex;align-items:center;justify-content:center;padding:12px}
+.edmath-dialog{box-sizing:border-box;width:min(640px,100%);max-height:90vh;overflow:auto;background:#fff;color:#17263d;border-radius:15px;padding:18px;box-shadow:0 18px 60px #0005;font:14px Arial,sans-serif}
+.edmath-head{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:9px}
+.edmath-head h3{font:bold 18px Arial,sans-serif;margin:0}
+.edmath-label{font-size:12px;color:#50647d;display:block;margin:12px 0 5px}
+.edmath-dialog math-field,.edmath-dialog textarea{box-sizing:border-box;width:100%;min-height:54px;border:1px solid #bacbdf;border-radius:10px;background:#fff;padding:9px;font:17px/1.5 Arial,sans-serif}
+.edmath-dialog textarea{resize:vertical;font:14px/1.5 monospace}
+.edmath-toolbar{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.edmath-toolbar button{border:1px solid #ccd8e5;padding:8px 10px;border-radius:7px;background:#f7fafc;cursor:pointer;min-width:43px}
+.edmath-toolbar button:hover{background:#e7f3ff}
+.edmath-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:9px;margin-top:14px}
+.edmath-actions button{padding:10px 14px;border-radius:9px;cursor:pointer;font-weight:700}
+.edmath-save{background:#1d4ed8;color:#fff;border:1px solid #1d4ed8}
+.edmath-cancel{background:#fff;color:#475569;border:1px solid #cbd5e1}
+.edmath-dialog .edmath-status{font:12px Arial,sans-serif;color:#64748b;margin-top:5px}
+.edmath-warn{color:#b45309;font-weight:600}
+@media(max-width:420px){.edmath-dialog{padding:12px}.edmath-toolbar button{flex:1 0 19%}}

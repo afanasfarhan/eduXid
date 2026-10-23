@@ -69,7 +69,7 @@
                                             <div class="mb-2 text-xs font-semibold text-indigo-600">{{ $soal->judul_materi }}</div>
                                         @endif
 
-                                        <div class="prose max-w-none text-gray-800 text-sm">{!! $soal->pertanyaan !!}</div>
+                                        <div class="prose max-w-none text-gray-800 text-sm">{!! \App\Support\QuestionHtmlSanitizer::clean($soal->pertanyaan) !!}</div>
                                     </div>
                                 </label>
                             @endforeach

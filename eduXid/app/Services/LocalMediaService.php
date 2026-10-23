@@ -11,6 +11,23 @@ use RuntimeException;
 class LocalMediaService
 {
     public const DISK = 'public';
+    private const PRIVATE_PREFIXES = ['surat_masuk/', 'kop_surat/', 'tanda_tangan/', 'photos/siswa/'];
+    private const PRIVATE_BASE = 'eduxid-media/';
+
+    public function isPrivate(string $relative): bool
+    {
+        $relative = strtolower(ltrim(str_replace('\\', '/', $relative), '/'));
+        foreach (self::PRIVATE_PREFIXES as $prefix) {
+            if (str_starts_with($relative, $prefix)) return true;
+        }
+        return false;
+    }
+
+    public static function privatePrefixes(): array { return self::PRIVATE_PREFIXES; }
+
+    private function diskFor(string $relative): string { return $this->isPrivate($relative) ? 'local' : self::DISK; }
+    private function diskPath(string $relative): string { return $this->isPrivate($relative) ? self::PRIVATE_BASE . $relative : $relative; }
+
 
     public function store(
         UploadedFile $file,
@@ -26,13 +43,14 @@ class LocalMediaService
 
         $filename = $this->normalizeFilename($filename);
 
-        $path = $file->storeAs($directory, $filename, self::DISK);
+        $relativeTarget = $directory . '/' . $filename;
+        $path = $file->storeAs($this->isPrivate($relativeTarget) ? self::PRIVATE_BASE . $directory : $directory, $filename, $this->diskFor($relativeTarget));
 
         if (!is_string($path) || trim($path) === '') {
             throw new RuntimeException('Gagal menyimpan media lokal.');
         }
 
-        return $this->normalizeRelativePath($path);
+        return $this->normalizeRelativePath($this->isPrivate($relativeTarget) ? $relativeTarget : $path);
     }
 
     public function replace(
@@ -62,15 +80,22 @@ class LocalMediaService
             return false;
         }
 
-        return Storage::disk(self::DISK)->delete($relative);
+        $deleted = Storage::disk($this->diskFor($relative))->delete($this->diskPath($relative));
+        if ($this->isPrivate($relative)) {
+            // Remove old publicly accessible copy as well (migration transition).
+            $deleted = Storage::disk(self::DISK)->delete($relative) || $deleted;
+        }
+        return $deleted;
     }
 
     public function exists(?string $path): bool
     {
         $relative = $this->normalizeLegacyPath($path);
 
-        return $relative !== null
-            && Storage::disk(self::DISK)->exists($relative);
+        return $relative !== null && (
+            Storage::disk($this->diskFor($relative))->exists($this->diskPath($relative))
+            || ($this->isPrivate($relative) && Storage::disk(self::DISK)->exists($relative))
+        );
     }
 
     public function path(?string $path): ?string
@@ -81,8 +106,15 @@ class LocalMediaService
             return null;
         }
 
-        $absolute = Storage::disk(self::DISK)->path($relative);
-        $root = $this->storageRoot();
+        $disk = $this->diskFor($relative);
+        $diskRelative = $this->diskPath($relative);
+        if ($this->isPrivate($relative) && !Storage::disk($disk)->exists($diskRelative)) {
+            // Legacy source remains readable via authenticated /media/ until migration.
+            $disk = self::DISK;
+            $diskRelative = $relative;
+        }
+        $absolute = Storage::disk($disk)->path($diskRelative);
+        $root = Storage::disk($disk)->path('');
 
         $realRoot = realpath($root);
         $realFile = realpath($absolute);
@@ -309,7 +341,7 @@ class LocalMediaService
         }
 
         try {
-            $ok = Storage::disk(self::DISK)->put($relative, $stream);
+            $ok = Storage::disk($this->diskFor($relative))->put($this->diskPath($relative), $stream);
         } finally {
             fclose($stream);
         }

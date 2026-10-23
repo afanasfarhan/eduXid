@@ -111,7 +111,7 @@
                     <div class="mb-4">
                         <x-input-label for="pertanyaan" value="Pertanyaan" class="text-xs font-bold" />
                         <textarea name="pertanyaan" id="pertanyaan" required rows="5" class="mt-1 block w-full text-xs py-1.5 border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 font-mono" placeholder="Tulis pertanyaan di sini..."></textarea>
-                        <p class="text-xs mt-1">Penulisan rumus matematika gunakan tanda dolar. Contoh: <code>$x^2 + y^2 = z^2$.</code><a href="https://katex.org/docs/supported.html" target="_blank"> Untuk bantuan, klik link ini.</a></p>
+                        <p class="text-xs mt-1">Penulisan rumus matematika gunakan tanda dolar. Contoh: <code>$x^2 + y^2 = z^2$.</code> Tekan tombol <strong>∑ Sisipkan Rumus</strong> untuk editor visual/LaTeX offline.</p>
                         
                         <!-- Tombol Sisipkan Gambar (rich-text, untuk <img> di dalam pertanyaan) -->
                         <div class="mt-2 flex items-center gap-2">
@@ -374,4 +374,11 @@
             }
         });
     </script>
+
+    <!-- eduXid V21R181: KaTeX lokal tetap renderer; MathLive jika vendor lokal tersedia. -->
+    <link rel="stylesheet" href="{{ asset('katex/katex.min.css') }}">
+    <link rel="stylesheet" href="{{ asset('vendor/eduxid-math/eduxid-math.css') }}?v=V21R181">
+    <script defer src="{{ asset('katex/katex.min.js') }}"></script>
+    <script defer src="{{ asset('katex/contrib/auto-render.min.js') }}"></script>
+    <script defer src="{{ asset('vendor/eduxid-math/eduxid-math.js') }}?v=V21R181"></script>
 </x-app-layout>

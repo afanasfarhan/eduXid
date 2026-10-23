@@ -1,0 +1,14 @@
+/* V21R178: dialog cetak LJK data rombel. Hanya PWA, tidak mengubah tata letak scan. */
+.ed-ljk-roster-overlay{position:fixed;inset:0;background:rgba(15,23,42,.66);z-index:12000;display:flex;justify-content:center;align-items:flex-start;overflow-y:auto;padding:18px 12px}
+.ed-ljk-roster-panel{width:min(580px,100%);max-height:calc(100vh - 36px);overflow:auto;background:#fff;border-radius:18px;padding:18px;color:#102037;box-shadow:0 20px 70px #08101c77}
+.ed-ljk-roster-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.ed-ljk-roster-head h2{margin:0 0 4px;font-size:22px;font-weight:800}.ed-ljk-roster-head p{margin:0 0 15px;color:#64748b;font-size:12px;line-height:1.6}
+.ed-ljk-roster-head button{border:1px solid #e2e8f0;border-radius:9px;background:#fff;padding:7px 12px;cursor:pointer}
+.ed-ljk-roster-label{display:grid;gap:6px;font-size:13px;font-weight:800}.ed-ljk-roster-label select{padding:10px;border-radius:10px;border:1px solid #cbd5e1;width:100%;font:inherit;font-weight:500;background:#fff}
+#ed-ljk-roster-stats{margin:15px 0 7px;font-size:13px;padding:10px;background:#eff6ff;border-radius:10px;color:#1e3a8a}
+#ed-ljk-roster-students{max-height:36vh;overflow:auto;border:1px solid #e2e8f0;border-radius:11px;padding:6px}
+.ed-ljk-roster-student{display:flex;align-items:center;gap:10px;padding:8px;border-bottom:1px solid #e2e8f0;font-size:13px;font-weight:700;cursor:pointer}
+.ed-ljk-roster-student:last-child{border:0}.ed-ljk-roster-student input{width:18px;height:18px;accent-color:#2563eb}.ed-ljk-roster-student small{display:block;font-size:11px;color:#64748b;font-weight:500;margin-top:3px}
+.ed-ljk-roster-warning{font-size:12px;line-height:1.6;color:#a16207;background:#fffbeb;padding:10px;border-radius:8px;margin:3px}.ed-ljk-roster-invalid{padding:6px 4px;font-size:12px;color:#991b1b}
+.ed-ljk-roster-note{font-size:12px;line-height:1.55;color:#64748b;margin:12px 0}
+.ed-ljk-roster-primary{width:100%;padding:13px;background:#2563eb;border:0;color:white;font-weight:800;border-radius:11px;cursor:pointer}.ed-ljk-roster-primary:disabled{background:#cbd5e1;color:#64748b;cursor:not-allowed}

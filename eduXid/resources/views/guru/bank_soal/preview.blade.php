@@ -59,8 +59,11 @@
                         @if(!empty($soal->tka_stimulus))
                             <div class="mb-4 rounded-lg bg-indigo-50 border border-indigo-200 p-3 whitespace-pre-line text-sm">{{ $soal->tka_stimulus }}</div>
                         @endif
+                        @if($instruction = \App\Support\QuestionTypeInstruction::forType($soal->jenis_soal, (bool) ($soal->tka_category ?? false)))
+                            <p class="mb-3 text-sm font-semibold leading-relaxed text-slate-800">{{ $instruction }}</p>
+                        @endif
                         <div class="eduxid-question prose max-w-none text-gray-900 leading-relaxed">
-                            {!! $soal->pertanyaan !!}
+                            {!! \App\Support\QuestionHtmlSanitizer::clean($soal->pertanyaan) !!}
                         </div>
 
                         @if(!empty($soal->gambar_soal))
@@ -89,7 +92,7 @@
                                             {{ $option['key'] }}
                                         </span>
                                         <div class="eduxid-option min-w-0 flex-1 text-sm leading-relaxed text-gray-800">
-                                            {!! $option['text'] !!}
+                                            {!! \App\Support\QuestionHtmlSanitizer::clean($option['text']) !!}
                                         </div>
                                     </div>
                                 @endforeach

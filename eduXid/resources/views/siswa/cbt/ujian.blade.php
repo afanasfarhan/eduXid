@@ -105,6 +105,9 @@
                             · <span class="uppercase" x-text="questions[currentQuestion].jenis_soal ?? ''"></span>
                         </p>
 
+                        <!-- Petunjuk otomatis berdasarkan jenis, tidak disimpan pada pertanyaan. -->
+                        <p x-show="questionInstruction(questions[currentQuestion])" x-text="questionInstruction(questions[currentQuestion])" class="mb-3 font-semibold text-sm text-slate-700 leading-relaxed"></p>
+
                         <!-- Render Soal (konten guru: HTML + gambar) -->
                         <div class="prose max-w-none mb-6 text-lg cbt-question-content" x-show="!questions[currentQuestion].tka_category" x-html="questions[currentQuestion].question"></div>
                         <template x-if="groupImage(questions[currentQuestion])">
@@ -156,6 +159,7 @@
                                            @change="setAnswer(questions[currentQuestion].id, opt.key)"
                                            class="mt-1 w-4 h-4">
 
+                                    <span class="font-semibold text-slate-700" x-show="questionOptionLabel(questions[currentQuestion], opt)" x-text="questionOptionLabel(questions[currentQuestion], opt)"></span>
                                     <span x-html="opt.text"></span>
                                 </label>
                             </template>
@@ -170,9 +174,6 @@
                                       class="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-400"></textarea>
                         </template>
 
-                        <p x-show="isMajemuk(questions[currentQuestion])" class="text-xs text-gray-500 mt-3">
-                            Pilih semua jawaban yang benar (boleh lebih dari satu).
-                        </p>
 
                         <!-- Navigasi Bawah -->
                         <div class="flex justify-between mt-8">
@@ -273,6 +274,27 @@ function cbtEngine(data) {
         categoryItems(q) {
             return this.questions.filter(item => item.tka_category && item.tka_group_code && item.tka_group_code === q.tka_group_code)
                 .sort((a,b) => (a.tka_statement_order || 0) - (b.tka_statement_order || 0));
+        },
+
+        questionOptionLabel(q, opt) {
+            if (!q || q.tka_category || String(q.jenis_soal ?? '').toLowerCase() !== 'benar_salah') return '';
+            const key = String(opt?.key ?? '').toUpperCase();
+            // Jawaban bank soal kanonik adalah B=Benar, S=Salah.
+            // Ditampilkan sebagai A/B TANPA mengubah nilai tersimpan atau penskoran.
+            const canonical = Array.isArray(q.options) && q.options.some(o => String(o.key ?? '').toUpperCase() === 'S');
+            return (canonical ? (key === 'B' ? 'A.' : key === 'S' ? 'B.' : '') : (key === 'A' || key === 'B' ? key + '.' : ''));
+        },
+
+        questionInstruction(q) {
+            if (!q || q.tka_category) return '';
+            const type = String(q.jenis_soal ?? '').trim().toLowerCase();
+            if (['majemuk', 'pilihan_majemuk', 'multiple_choice_complex'].includes(type)) {
+                return 'Untuk soal ini, Anda diperbolehkan memilih lebih dari satu jawaban.';
+            }
+            if (['benar_salah', 'true_false'].includes(type)) {
+                return 'Soal ini adalah pernyataan benar salah. Jawab A jika pernyataan benar, dan jawab B jika pernyataan salah.';
+            }
+            return '';
         },
 
         isMajemuk(q) {

@@ -125,7 +125,7 @@
                                             {{ $soal->judul_materi ?? '-' }}
                                         </td>
                                         <td class="px-4 py-3 text-sm text-gray-900 align-top break-words w-full">
-                                            {!! $soal->pertanyaan !!}
+                                            {!! \App\Support\QuestionHtmlSanitizer::clean($soal->pertanyaan) !!}
                                         </td>
                                         <td class="px-4 py-3 text-sm text-gray-500 align-top whitespace-nowrap w-32">
                                             <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">

@@ -8,6 +8,7 @@ Route::middleware(['auth', 'role:pengajar'])
     ->name('guru.ljk-auto.')
     ->group(function () {
         Route::get('/', [LjkAutoCorrectionController::class, 'index'])->name('index');
+        Route::get('/cetak-lembar-rombel', [\App\Http\Controllers\Guru\LjkRosterTemplateController::class, 'index'])->name('roster-print');
         // V13: sesi kunci manual TANPA membuat exams atau Bank Soal.
         Route::get('/standalone', [\App\Http\Controllers\Guru\LjkStandaloneManualController::class, 'index'])->name('standalone.index');
         Route::post('/standalone', [\App\Http\Controllers\Guru\LjkStandaloneManualController::class, 'create'])->name('standalone.create');

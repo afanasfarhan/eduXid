@@ -9,6 +9,7 @@ use Maatwebsite\Excel\Concerns\ToCollection;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
 use RuntimeException;
 use App\Support\TkaCategory;
+use App\Support\QuestionHtmlSanitizer;
 use Illuminate\Support\Str;
 
 class SoalImport implements ToCollection, WithHeadingRow
@@ -180,11 +181,11 @@ class SoalImport implements ToCollection, WithHeadingRow
 
             if (in_array($jenisSoal, ['pilihan_ganda', 'majemuk'], true)) {
                 $rawOpsi = [
-                    'A' => trim((string) ($row['opsi_a'] ?? '')),
-                    'B' => trim((string) ($row['opsi_b'] ?? '')),
-                    'C' => trim((string) ($row['opsi_c'] ?? '')),
-                    'D' => trim((string) ($row['opsi_d'] ?? '')),
-                    'E' => trim((string) ($row['opsi_e'] ?? '')),
+                    'A' => QuestionHtmlSanitizer::clean(trim((string) ($row['opsi_a'] ?? ''))),
+                    'B' => QuestionHtmlSanitizer::clean(trim((string) ($row['opsi_b'] ?? ''))),
+                    'C' => QuestionHtmlSanitizer::clean(trim((string) ($row['opsi_c'] ?? ''))),
+                    'D' => QuestionHtmlSanitizer::clean(trim((string) ($row['opsi_d'] ?? ''))),
+                    'E' => QuestionHtmlSanitizer::clean(trim((string) ($row['opsi_e'] ?? ''))),
                 ];
 
                 foreach ($rawOpsi as $key => $value) {
@@ -301,7 +302,7 @@ class SoalImport implements ToCollection, WithHeadingRow
                 'level_kognitif' => strtoupper(trim((string) ($row['level_kognitif'] ?? 'C3'))),
                 'judul_materi' => trim((string) ($row['judul_materi'] ?? '')) ?: null,
                 'indikator' => trim((string) ($row['indikator'] ?? '')) ?: null,
-                'pertanyaan' => $pertanyaan,
+                'pertanyaan' => QuestionHtmlSanitizer::clean($pertanyaan),
                 'gambar_soal' => $this->imagesByRow[$excelRow] ?? null,
                 'opsi_jawaban' => $opsi !== [] ? json_encode($opsi, JSON_UNESCAPED_UNICODE) : null,
                 'kunci_jawaban' => $kunciJawaban,

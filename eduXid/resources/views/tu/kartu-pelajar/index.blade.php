@@ -321,7 +321,7 @@
             padding-left: 1.5mm;
         }  
 
-        .data-row { display: flex; min-height: 2.8mm; font-size: 1.6mm; line-height: 1.1; }  
+        .data-row { display: flex; min-height: 2.8mm; font-size: 2mm; line-height: 1.1; }  
         .data-label { width: 14mm; flex-shrink: 0; color: #475569; font-weight: 600; }  
         .data-separator { width: 2mm; flex-shrink: 0; text-align: center; color: #475569; }  
         .data-value { 

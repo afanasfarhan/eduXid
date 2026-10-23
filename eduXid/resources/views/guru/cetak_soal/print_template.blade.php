@@ -64,6 +64,7 @@
         }
 
         .question { margin-bottom: 20px; page-break-inside: avoid; }
+        .question-type-instruction { display:inline; font-size:11pt; font-weight:700; line-height:1.5; margin:0 5px 0 4px; }
         .question-text { 
             font-weight: normal; 
             margin-bottom: 8px; 
@@ -121,7 +122,11 @@
         .btn-delete { background: #dc2626; display: none; } /* Merah (Hapus Kop) */
         .btn-print { background: #4f46e5; }  /* Indigo */
         .btn-back { background: #6b7280; }   /* Abu-abu (Kembali) */
-    </style>
+      /* V21R180: Word tables remain legible in printed question content. */
+  .question-text table{border-collapse:collapse;width:100%;max-width:100%;margin:8px 0;font-size:inherit}
+  .question-text td,.question-text th{border:1px solid #64748b;padding:5px 8px;text-align:left;vertical-align:top}
+  .question-text tr{break-inside:avoid;page-break-inside:avoid}
+</style>
 </head>
 <body>
 
@@ -187,7 +192,13 @@
         @endif
         @php $lastTkaGroup = $soal->tka_group_code ?? null; @endphp
         <div class="question">
-            <div class="question-text">{{ $index + 1 }}. {!! $soal->pertanyaan !!}</div>
+            <div class="question-text">
+                {{ $index + 1 }}.
+                @if($instruction = \App\Support\QuestionTypeInstruction::forType($soal->jenis_soal))
+                    <span class="question-type-instruction">{{ $instruction }}</span>
+                @endif
+                {!! \App\Support\QuestionHtmlSanitizer::clean($soal->pertanyaan) !!}
+            </div>
             @if(!empty($soal->gambar_soal))
                 <div class="question-image" style="margin: 6px 0 12px 26px; page-break-inside: avoid;">
                     <img src="{{ $soal->gambar_soal }}" alt="Gambar soal nomor {{ $index + 1 }}"
@@ -205,7 +216,7 @@
                         @foreach($opsiArr as $key => $opsi)
                             <div class="option">
                                 <span class="option-letter">{{ $key }}.</span>
-                                <span>{!! $opsi !!}</span>
+                                <span>{!! \App\Support\QuestionHtmlSanitizer::clean($opsi) !!}</span>
                             </div>
                         @endforeach
                     @endif

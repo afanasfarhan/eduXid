@@ -38,6 +38,8 @@
         .navbtn.active { border-color: #4f46e5; background: #eef2ff; color: #4338ca; }
         .navbtn.filled { background: #4f46e5; border-color: #4f46e5; color: #fff; }
         .qmeta { font-size: 12px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 8px; }
+        .qtype-instruction { font-size: 14px; line-height: 1.5; font-weight: 700; margin: 4px 0 10px; color: #334155; }
+        .qtype-instruction:empty { display: none; }
         .qtext { font-size: 16px; line-height: 1.7; margin-bottom: 16px; white-space: pre-line; }
         .opt {
             display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: left;
@@ -118,7 +120,7 @@
         </div>
         <div class="card">
             <div class="qmeta" id="qmeta"></div>
-            <div class="qtext" id="qtext"></div>
+            <div id="qtype-instruction" class="qtype-instruction"></div><div class="qtext" id="qtext"></div>
             <div id="qoptions"></div>
             <div class="row">
                 <button class="btn btn-ghost" id="btn-prev">← Sebelumnya</button>
@@ -168,7 +170,15 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 
     function optionEntries(q) {
-        const o = q.opsi_jawaban;
+        let o = q.opsi_jawaban;
+        if (typeof o === 'string') {
+            try { o = JSON.parse(o); } catch (e) { /* opsi lama bukan JSON */ }
+        }
+        if ((o == null || o === '' || (Array.isArray(o) && o.length === 0) || (typeof o === 'object' && Object.keys(o).length === 0))
+                && String(q.jenis_soal ?? '').trim().toLowerCase() === 'benar_salah') {
+            // Format kanonik bank soal B=Benar, S=Salah; tampilan dipetakan menjadi A/B.
+            return [{ key: 'B', text: 'Benar' }, { key: 'S', text: 'Salah' }];
+        }
 
         if (Array.isArray(o)) {
             return o.map((item, i) => {
@@ -372,6 +382,12 @@ document.addEventListener('DOMContentLoaded', async function () {
             + ' · ' + String(q.jenis_soal ?? 'pg').toUpperCase()
             + ' · bobot ' + escapeHtml(String(q.bobot_nilai ?? 1));
 
+        const jenisPetunjuk = String(q.jenis_soal ?? '').trim().toLowerCase();
+        $('qtype-instruction').textContent = q.tka_category ? ''
+            : ['majemuk', 'pilihan_majemuk', 'multiple_choice_complex'].includes(jenisPetunjuk)
+                ? 'Untuk soal ini, Anda diperbolehkan memilih lebih dari satu jawaban.'
+                : ['benar_salah', 'true_false'].includes(jenisPetunjuk)
+                    ? 'Soal ini adalah pernyataan benar salah. Jawab A jika pernyataan benar, dan jawab B jika pernyataan salah.' : '';
         $('qtext').textContent = q.pertanyaan ?? '';
 
         const box = $('qoptions');
@@ -414,17 +430,14 @@ document.addEventListener('DOMContentLoaded', async function () {
                 box.appendChild(b);
             });
 
-            const note = document.createElement('p');
-            note.className = 'sub';
-            note.style.marginTop = '10px';
-            note.textContent = 'Pilihan majemuk: pilih semua jawaban yang benar.';
-            box.appendChild(note);
         } else {
             optionEntries(q).forEach(opt => {
                 const b = document.createElement('button');
                 b.type = 'button';
                 b.className = 'opt' + (String(sess.answers[String(q.question_bank_id)] ?? '').toUpperCase() === opt.key ? ' sel' : '');
-                b.innerHTML = '<span class="key">' + escapeHtml(opt.key) + '.</span><span>' + escapeHtml(opt.text) + '</span>';
+                const tfKeys = jenis === 'benar_salah' && optionEntries(q).some(x => x.key === 'S');
+                const displayKey = jenis === 'benar_salah' && tfKeys ? (opt.key === 'B' ? 'A' : opt.key === 'S' ? 'B' : opt.key) : opt.key;
+                b.innerHTML = '<span class="key">' + escapeHtml(displayKey) + '.</span><span>' + escapeHtml(opt.text) + '</span>';
                 b.addEventListener('click', function () {
                     sess.answers[String(q.question_bank_id)] = opt.key;
                     renderQuestion(); refreshNav();

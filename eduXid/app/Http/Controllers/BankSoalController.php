@@ -221,32 +221,9 @@ class BankSoalController extends Controller
     // ==========================================
     // PRIVATE HELPER UNTUK HTML PURIFIER
     // ==========================================
-    private function getPurifier()
+    private function getPurifier(): HTMLPurifier
     {
-        $cachePath = storage_path('app/purifier_cache');
-
-        /*
-         * [DIR-FIX] is_dir guard sebelum mkdir — mkdir bisa gagal
-         * (permission) tanpa notice; cek is_dir setelahnya menutup
-         * race condition.
-         */
-        if (!is_dir($cachePath) && !mkdir($cachePath, 0775, true) && !is_dir($cachePath)) {
-            throw new \RuntimeException('Direktori cache purifier tidak dapat dibuat.');
-        }
-
-        $config = HTMLPurifier_Config::createDefault();
-
-        $config->set('Cache.SerializerPath', $cachePath);
-
-        $config->set(
-            'HTML.Allowed',
-            'p,b,i,u,ul,ol,li,strong,em,span[style],img[src|alt|width|height],br,sub,sup'
-        );
-
-        $config->set('URI.Base', asset(''));
-        $config->set('URI.MakeAbsolute', true);
-
-        return new HTMLPurifier($config);
+        return \App\Support\QuestionHtmlSanitizer::purifier();
     }
 
     // ==========================================
@@ -340,6 +317,9 @@ class BankSoalController extends Controller
         }
 
         $soals = $query->latest()->get();
+        $wordSubjectGrades = $this->teachingGradeMap((int)$guru->id);
+        $wordSubjectNames = Subject::whereIn('id', array_keys($wordSubjectGrades))
+            ->pluck('nama_mata_pelajaran', 'id')->all();
         // Jumlah keseluruhan milik guru, tidak terpengaruh filter kelas.
         $totalSoalGuru = QuestionBank::where('teacher_id', $guru->id)->count();
 
@@ -347,7 +327,9 @@ class BankSoalController extends Controller
             'soals',
             'totalSoalGuru',
             'tingkatDiajar',
-            'filterTingkat'
+            'filterTingkat',
+            'wordSubjectGrades',
+            'wordSubjectNames'
         ));
     }
 
@@ -1129,6 +1111,15 @@ class BankSoalController extends Controller
      */
     public function importExcel(Request $request)
     {
+        // V21R180: DOCX uses the existing protected Bank Soal import route.
+        // routes/web.php remains untouched (signed integrity manifest).
+        if ($request->input('word_mode') === 'preview') {
+            return $this->previewWordImport($request);
+        }
+        if ($request->input('word_mode') === 'commit') {
+            return $this->commitWordImport($request);
+        }
+
         $request->validate([
             'excel_file' => 'required|file|mimes:xlsx,xls,csv',
         ]);
@@ -1544,4 +1535,191 @@ class BankSoalController extends Controller
             'Bank_Soal_Import.xlsx'
         );
     }
+
+    // -------------------------------------------------------------
+    // V21R180: WORD (.DOCX) -> PRATINJAU -> SIMPAN (offline-local).
+    // -------------------------------------------------------------
+    private function wordDraftPath(int $teacherId, string $token): string
+    {
+        if (!preg_match('/^[a-f0-9]{32}$/D', $token)) {
+            abort(400, 'Token impor Word tidak valid.');
+        }
+        return storage_path('app/private/eduxid-word-drafts/'.$teacherId.'/'.$token.'.json');
+    }
+
+    private function loadWordDraft(int $teacherId, string $token): array
+    {
+        $path = $this->wordDraftPath($teacherId, $token);
+        if (!is_file($path) || is_link($path)) abort(404, 'Pratinjau Word tidak ditemukan atau telah disimpan.');
+        $draft = json_decode((string)file_get_contents($path), true);
+        if (!is_array($draft)
+            || (int)($draft['teacher_id'] ?? -1) !== $teacherId
+            || (int)($draft['user_id'] ?? -1) !== (int)auth()->id()
+            || (int)($draft['created_at'] ?? 0) + (int)config('word_import.preview_ttl_seconds', 3600) < time()) {
+            abort(403, 'Pratinjau Word telah kedaluwarsa atau bukan milik guru aktif.');
+        }
+        return $draft;
+    }
+
+    private function previewWordImport(Request $request)
+    {
+        $guru = $this->currentTeacher();
+        abort_unless($guru, 403, 'Akun tidak terhubung ke data Guru.');
+        $input = $request->validate([
+            'word_file' => 'required|file|mimes:docx|max:10240',
+            'subject_id' => 'required|integer|exists:subjects,id',
+            'tingkat_kelas' => 'required|integer|in:10,11,12',
+            'ai_mode' => 'nullable|in:on,off',
+        ]);
+        $this->assertTeacherTeachesSubjectGrade((int)$guru->id, (int)$input['subject_id'], (int)$input['tingkat_kelas']);
+        try {
+            $parsed = app(\App\Services\WordQuestionImportService::class)
+                ->parse($request->file('word_file')->getRealPath());
+            app(\App\Services\WordQuestionAiReview::class)
+                ->review($parsed, ($input['ai_mode'] ?? 'off') === 'on');
+        } catch (\Throwable $e) {
+            Log::warning('Parser Word gagal.', ['teacher_id'=>$guru->id, 'error'=>$e->getMessage()]);
+            return back()->with('error', 'Impor Word belum dapat dipratinjau: '.$e->getMessage());
+        }
+        $token = bin2hex(random_bytes(16));
+        $draft = [
+            'teacher_id'=>(int)$guru->id,
+            'user_id'=>(int)auth()->id(),
+            'subject_id'=>(int)$input['subject_id'],
+            'tingkat_kelas'=>(int)$input['tingkat_kelas'],
+            'created_at'=>time(),
+            'parsed'=>$parsed,
+        ];
+        $file = $this->wordDraftPath((int)$guru->id, $token);
+        if (!is_dir(dirname($file)) && !mkdir(dirname($file), 0700, true) && !is_dir(dirname($file))) {
+            return back()->with('error', 'Folder pratinjau Word tidak bisa dibuat.');
+        }
+        $contents = json_encode($draft, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+        if (!is_string($contents) || strlen($contents) > 4 * 1024 * 1024) {
+            return back()->with('error', 'Hasil Word melebihi batas pratinjau 4 MB. Kurangi jumlah atau ukuran gambar.');
+        }
+        if (file_put_contents($file, $contents, LOCK_EX) === false) {
+            return back()->with('error', 'Gagal menyimpan pratinjau Word secara lokal.');
+        }
+        @chmod($file, 0600);
+        return view('guru.bank_soal.word_preview', [
+            'draft'=>$draft, 'token'=>$token, 'errorMessage'=>null,
+            'prefill'=>[],
+        ]);
+    }
+
+    private function commitWordImport(Request $request)
+    {
+        $guru = $this->currentTeacher();
+        abort_unless($guru, 403, 'Akun tidak terhubung ke data Guru.');
+        $input = $request->validate([
+            'draft_token'=>'required|string|size:32',
+            'selected'=>'required|array|min:1|max:200',
+            'selected.*'=>'required|integer|min:0|max:199|distinct',
+            'pertanyaan'=>'required|array|max:200',
+            'opsi'=>'required|array|max:200',
+            'kunci'=>'required|array|max:200',
+            'jenis_soal'=>'required|array|max:200',
+        ]);
+        $token = (string)$input['draft_token'];
+        $draft = $this->loadWordDraft((int)$guru->id, $token);
+        $this->assertTeacherTeachesSubjectGrade(
+            (int)$guru->id, (int)$draft['subject_id'], (int)$draft['tingkat_kelas']
+        );
+        $questions = $draft['parsed']['questions'] ?? [];
+        $rows = [];
+        $errors = [];
+        foreach ($input['selected'] as $index) {
+            $q = $questions[$index] ?? null;
+            if (!is_array($q)) { $errors[] = 'Nomor soal yang dipilih tidak ada.'; continue; }
+            $type = (string)($input['jenis_soal'][$index] ?? 'pilihan_ganda');
+            if (!in_array($type, ['pilihan_ganda','majemuk','benar_salah'], true)) {
+                $errors[] = 'Tipe soal '.$q['number'].' tidak valid.';
+                continue;
+            }
+            $question = trim((string)($input['pertanyaan'][$index] ?? ''));
+            if ($question === '' || mb_strlen(strip_tags($question)) > 12000) {
+                $errors[] = 'Pertanyaan nomor '.$q['number'].' kosong atau terlalu panjang.';
+                continue;
+            }
+            $options = [];
+            if ($type === 'benar_salah') {
+                $options = ['B'=>'Benar','S'=>'Salah'];
+            } else {
+                foreach (['A','B','C','D','E'] as $letter) {
+                    $value = trim((string)($input['opsi'][$index][$letter] ?? ''));
+                    if ($value === '' || mb_strlen(strip_tags($value)) > 3500) {
+                        $errors[] = 'Opsi '.$letter.' soal nomor '.$q['number'].' harus lengkap (maks. 3500 karakter).';
+                        continue 2;
+                    }
+                    $options[$letter] = \App\Support\QuestionHtmlSanitizer::clean($value);
+                }
+            }
+            $key = strtoupper(str_replace(' ', '', (string)($input['kunci'][$index] ?? '')));
+            if ($type === 'majemuk') {
+                $letters = array_values(array_unique(array_filter(explode(',', $key))));
+                if (!$letters || array_diff($letters, ['A','B','C','D','E'])) {
+                    $errors[] = 'Kunci soal majemuk nomor '.$q['number'].' harus berisi A–E dipisahkan koma.';
+                    continue;
+                }
+                $key = json_encode($letters);
+            } elseif ($type === 'benar_salah') {
+                // User-facing A=Benar, B=Salah. Preserve internal B/S semantics.
+                if (!in_array($key, ['A','B'], true)) {
+                    $errors[] = 'Kunci benar/salah nomor '.$q['number'].' harus A atau B.';
+                    continue;
+                }
+                $key = $key === 'A' ? 'B' : 'S';
+            } elseif (!in_array($key, ['A','B','C','D','E'], true)) {
+                $errors[] = 'Kunci nomor '.$q['number'].' wajib A–E.';
+                continue;
+            }
+            $rows[] = [
+                'teacher_id'=>(int)$guru->id,
+                'subject_id'=>(int)$draft['subject_id'],
+                'tingkat_kelas'=>(int)$draft['tingkat_kelas'],
+                'jenis_soal'=>$type,
+                'pertanyaan'=>\App\Support\QuestionHtmlSanitizer::clean($question),
+                'opsi_jawaban'=>$options,
+                'kunci_jawaban'=>$key,
+                'bobot_nilai'=>1,
+                'judul_materi'=>null,
+                'indikator'=>null,
+                'level_kognitif'=>'C2',
+                'gambar_soal'=>$q['image'] ?? null,
+            ];
+        }
+        if (!$rows || $errors) {
+            return view('guru.bank_soal.word_preview', [
+                'draft'=>$draft, 'token'=>$token,
+                'errorMessage'=>implode(' ', $errors ?: ['Tidak ada soal valid yang dipilih.']),
+                'prefill'=>$request->all(),
+            ]);
+        }
+        // Existing QuestionBank model casts opsi_jawaban to JSON automatically.
+        // Serialise commits for this token, preventing double-click duplication.
+        $draftPath = $this->wordDraftPath((int)$guru->id, $token);
+        $lockPath = $draftPath.'.lock';
+        $lock = @fopen($lockPath, 'c');
+        if (!$lock) throw ValidationException::withMessages(['word_file'=>'Kunci impor tidak dapat dibuat.']);
+        if (!flock($lock, LOCK_EX | LOCK_NB)) {
+            fclose($lock);
+            throw ValidationException::withMessages(['word_file'=>'Impor dokumen ini sedang diproses.']);
+        }
+        try {
+            if (!is_file($draftPath)) abort(409, 'Soal Word ini sudah diimpor atau pratinjau tidak tersedia.');
+            // One transaction: either every selected question is saved or none is.
+            DB::transaction(function () use ($rows): void {
+                foreach ($rows as $row) QuestionBank::create($row);
+            }, 3);
+            @unlink($draftPath);
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+            @unlink($lockPath);
+        }
+        return redirect()->route('guru.bankSoal')
+            ->with('success', count($rows).' soal Word berhasil diimpor ke Bank Soal. Kunci jawaban sudah diperiksa guru.');
+    }
+
 }

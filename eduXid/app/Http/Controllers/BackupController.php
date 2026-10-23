@@ -359,37 +359,29 @@ class BackupController extends Controller
                      */
                     DB::table($table)->delete();
 
-                    /*
-                     * Ambil data dari database backup.
+                    /* [EDX-A05] Streaming cursor, not fetchAll/array_map/chunks of whole table.
+                     * Preserve deterministic column filtering and 500-row insertion size.
+                     * Use a separate PDO cursor per table to keep memory bounded.
                      */
-                    $rows = $backupPdo
-                        ->query("SELECT * FROM {$quotedTable}")
-                        ->fetchAll(\PDO::FETCH_ASSOC);
-
-                    if (empty($rows)) {
-                        continue;
+                    $cursor = $backupPdo->query("SELECT * FROM {$quotedTable}");
+                    if ($cursor === false) {
+                        throw new RuntimeException('Gagal membaca tabel backup: ' . $table);
                     }
-
-                    /*
-                     * [SCHEMA-FIX] Buang kolom yang tidak ada di tabel
-                     * AKTIF — backup dari versi aplikasi berbeda tidak
-                     * lagi menggagalkan seluruh restore.
-                     */
                     $activeColumns = array_flip(Schema::getColumnListing($table));
-
-                    $rows = array_map(
-                        fn ($row) => $activeColumns !== []
-                            ? array_intersect_key($row, $activeColumns)
-                            : $row,
-                        $rows
-                    );
-
-                    /*
-                     * Masukkan data bertahap — chunk 500 menjaga
-                     * penggunaan memory tetap terkendali.
-                     */
-                    foreach (array_chunk($rows, 500) as $chunk) {
-                        DB::table($table)->insert($chunk);
+                    $batch = [];
+                    try {
+                        while (($row = $cursor->fetch(\PDO::FETCH_ASSOC)) !== false) {
+                            $filtered = $activeColumns !== [] ? array_intersect_key($row, $activeColumns) : $row;
+                            if ($filtered === []) continue;
+                            $batch[] = $filtered;
+                            if (count($batch) === 500) {
+                                DB::table($table)->insert($batch);
+                                $batch = [];
+                            }
+                        }
+                        if ($batch !== []) DB::table($table)->insert($batch);
+                    } finally {
+                        $cursor->closeCursor();
                     }
                 }
 

@@ -36,6 +36,7 @@
       @else
         <button type="button" disabled class="eduxid-btn cursor-not-allowed rounded-md border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-400">Template LJK</button>
       @endif
+      <a href="{{ route('guru.ljk-auto.roster-print') }}" target="_blank" rel="noopener" class="eduxid-btn rounded-md border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-bold text-blue-700 hover:bg-blue-100">🖨️ LJK Per Rombel (Biodata Otomatis)</a>
       <button id="ljk-calibration-open" type="button" class="eduxid-btn rounded-md border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-bold text-amber-800 hover:bg-amber-100">Kalibrasi</button>
       <button id="ljk-scroll-results" type="button" class="eduxid-btn rounded-md bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-800">Hasil & Review</button>
     </div>
